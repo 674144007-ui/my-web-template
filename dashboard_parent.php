@@ -1,118 +1,55 @@
 <?php
 require_once 'auth.php';
-requireRole(['parent','developer']);
+requireRole(['parent']);
 $user = currentUser();
+$is_sim = (isset($_SESSION['dev_simulation_mode']) || (isset($user['original_role']) && $user['original_role']=='developer'));
 ?>
 <!DOCTYPE html>
 <html lang="th">
 <head>
 <meta charset="UTF-8">
 <title>Parent Dashboard</title>
-
 <style>
-body {
-    margin:0;
-    padding:24px;
-    font-family:system-ui, sans-serif;
-    background:linear-gradient(135deg,#86efac,#4ade80,#22c55e);
-    min-height:100vh;
-}
+body { margin:0; padding:30px; font-family:"Segoe UI",sans-serif; background:#f0f2f5; }
+.topbar { display:flex; justify-content:space-between; align-items:center; margin-bottom:30px; }
+.card-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(250px,1fr)); gap:20px; }
+.card { background:white; padding:20px; border-radius:10px; box-shadow:0 2px 5px rgba(0,0,0,0.1); }
+.btn { display:inline-block; margin-top:10px; padding:8px 12px; background:#f59e0b; color:white; text-decoration:none; border-radius:5px; }
+.logout { color:red; text-decoration:none; }
 
-/* ---------- Topbar ---------- */
-.topbar {
-    background:white;
-    padding:14px 20px;
-    border-radius:14px;
-    box-shadow:0 10px 25px rgba(0,0,0,0.15);
-    margin-bottom:20px;
-    display:flex;
-    justify-content:space-between;
-    align-items:center;
-}
-
-.topbar a {
-    color:#15803d;
-    font-weight:bold;
-    text-decoration:none;
-    margin-left:12px;
-}
-.topbar a:hover { text-decoration:underline; }
-
-.badge {
-    padding:4px 10px;
-    background:#16a34a;
-    color:white;
-    border-radius:999px;
-    font-size:0.8rem;
-}
-
-/* ---------- Card ---------- */
-.card {
-    background:white;
-    padding:20px;
-    border-radius:16px;
-    margin-bottom:16px;
-    box-shadow:0 10px 25px rgba(0,0,0,0.1);
-}
-
-.button-main {
-    display:inline-block;
-    padding:10px 14px;
-    background:#16a34a;
-    color:white;
-    border-radius:8px;
-    text-decoration:none;
-    margin-top:8px;
-}
-.button-main:hover {
-    background:#22c55e;
-}
+.sim-bar { background: #ef4444; color: white; padding: 15px; margin: -30px -30px 30px -30px; text-align: center; font-weight: bold; position: relative; z-index: 1000; }
+.btn-exit-sim { background: white; color: #ef4444; padding: 5px 15px; border-radius: 20px; text-decoration: none; margin-left: 15px; border: 2px solid white; transition: 0.2s; }
+.btn-exit-sim:hover { background: #ef4444; color: white; }
 </style>
-
 </head>
 <body>
 
-<!-- ---------- Top Bar ---------- -->
+<?php if($is_sim): ?>
+<div class="sim-bar">
+    ⚠️ คุณกำลังใช้งานโหมดจำลอง (Simulation Mode) : ผู้ปกครอง
+    <a href="switch_mode.php?action=exit" class="btn-exit-sim">🛑 ออกจากโหมดจำลอง</a>
+</div>
+<?php endif; ?>
+
 <div class="topbar">
     <div>
-        <strong>Parent Dashboard</strong><br>
-        <small>ยินดีต้อนรับ <?= htmlspecialchars($user['display_name']) ?></small>
+        <h1>Parent Dashboard</h1>
+        <small>สวัสดี, <?= htmlspecialchars($user['display_name']) ?></small>
     </div>
+    <a class="logout" href="logout.php">Logout</a>
+</div>
 
-    <div>
-        <?php if ($user['role']=='developer'): ?>
-            <span class="badge">Developer Preview</span>
-        <?php endif; ?>
-
-        <a href="dashboard_dev.php">Dev</a>
-        <a href="logout.php">Logout</a>
+<div class="card-grid">
+    <div class="card">
+        <h3>👦 ติดตามการบ้านบุตรหลาน</h3>
+        <p>ดูรายการงานที่ลูกได้รับมอบหมาย</p>
+        <a class="btn" href="parent_assignments.php">ดูการบ้านลูก</a>
+    </div>
+    <div class="card">
+        <h3>📊 ผลการเรียน</h3>
+        <p>ดูเกรดและพฤติกรรม</p>
+        <a class="btn" href="#">ดูรายงาน (Coming Soon)</a>
     </div>
 </div>
-
-
-<!-- ---------- เมนูหลัก ---------- -->
-<div class="card">
-    <h3>📘 งานของบุตรหลาน</h3>
-    <p>ดูงานที่ครูมอบหมายตามระดับชั้นของบุตรหลาน</p>
-    <a href="parent_assignments.php" class="button-main">📘 เปิดดูงานทั้งหมด</a>
-</div>
-
-<div class="card">
-    <h3>📊 ผลการเรียนบุตรหลาน</h3>
-    <ul>
-        <li>คะแนนเฉลี่ย: 3.50</li>
-        <li>การบ้านค้าง: 2 งาน</li>
-        <li>ประวัติการมาเรียน: ขาด 1 / สาย 2</li>
-    </ul>
-</div>
-
-<div class="card">
-    <h3>🎗 พฤติกรรมและความก้าวหน้า</h3>
-    <ul>
-        <li>ช่วยงานครู: +5 GP</li>
-        <li>เข้าร่วมกิจกรรมวิทยาศาสตร์: +10 GP</li>
-    </ul>
-</div>
-
 </body>
 </html>
