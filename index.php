@@ -1,44 +1,41 @@
 <?php
-require_once 'db.php';
-require_once 'auth.php';
+// เริ่ม Buffer บรรทัดแรกสุด
+if (ob_get_level() == 0) ob_start();
 
-// แสดง error ตอนพัฒนา (ลบเมื่อออนไลน์)
-ini_set('display_errors',1);
-ini_set('display_startup_errors',1);
+require_once 'auth.php';
+require_once 'db.php';
+
+// แสดง Error เฉพาะตอน Dev
+ini_set('display_errors', 1);
 error_reporting(E_ALL);
 
 $error = "";
 
-// ⚠️ brute-force protection
-if (!isset($_SESSION['login_attempts'])) $_SESSION['login_attempts'] = 0;
-if (!isset($_SESSION['last_attempt_time'])) $_SESSION['last_attempt_time'] = time();
-
-$LOCK_THRESHOLD = 5;
-$LOCK_TIME = 30;
-
-if ($_SESSION['login_attempts'] >= $LOCK_THRESHOLD) {
-    $remaining = $LOCK_TIME - (time() - $_SESSION['last_attempt_time']);
-    if ($remaining > 0) {
-        $error = "พยายามหลายครั้งเกินไป กรุณารอ $remaining วินาที";
-    } else {
-        $_SESSION['login_attempts'] = 0; // unlock
+// 🔄 ถ้า Login อยู่แล้ว ให้ไป Dashboard เลย (ไม่ต้อง Login ซ้ำ)
+if (isLoggedIn()) {
+    $role = $_SESSION['role'];
+    $redirect = "index.php";
+    switch ($role) {
+        case 'student':   $redirect = "dashboard_student.php"; break;
+        case 'teacher':   $redirect = "dashboard_teacher.php"; break;
+        case 'parent':    $redirect = "dashboard_parent.php"; break;
+        case 'developer': $redirect = "dashboard_dev.php"; break;
     }
+    header("Location: " . $redirect);
+    exit;
 }
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && empty($error)) {
-
+// ตรวจสอบการ Submit Form
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $username = trim($_POST['username'] ?? '');
     $password = trim($_POST['password'] ?? '');
 
-    if ($username === "" || $password === "") {
+    if (empty($username) || empty($password)) {
         $error = "กรุณากรอกข้อมูลให้ครบ";
     } else {
-
-        // ⭐ แก้ไขจุดที่ Error:
-        // ลบ subject, teacher_department ออก เพราะในตาราง users ไม่มี
-        // เปลี่ยนเป็นเลือก class_level มาแทน
+        // ใช้ SQL Prepared Statement เพื่อความปลอดภัย
         $stmt = $conn->prepare("
-            SELECT id, username, password, display_name, role, class_level
+            SELECT id, username, password, display_name, role, class_level, subject_group, teacher_department
             FROM users
             WHERE username = ?
             LIMIT 1
@@ -46,54 +43,46 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && empty($error)) {
         $stmt->bind_param("s", $username);
         $stmt->execute();
         $stmt->store_result();
-
-        // Bind ตัวแปรให้ครบตามจำนวนที่ SELECT มา (6 ตัว)
-        $stmt->bind_result(
-            $id,
-            $db_username,
-            $db_password,
-            $display_name,
-            $role,
-            $class_level
-        );
+        $stmt->bind_result($id, $db_user, $db_pass, $db_name, $db_role, $db_class, $db_subj, $db_dept);
 
         if ($stmt->num_rows === 1) {
             $stmt->fetch();
+            if (password_verify($password, $db_pass)) {
+                
+                // ✅ Login สำเร็จ: เก็บข้อมูลลง Session
+                $_SESSION['user_id'] = $id;
+                $_SESSION['username'] = $db_user;
+                $_SESSION['display_name'] = $db_name;
+                $_SESSION['role'] = $db_role;
+                $_SESSION['class_level'] = $db_class;
+                $_SESSION['subject_group'] = $db_subj;
+                $_SESSION['teacher_department'] = $db_dept;
 
-            if (password_verify($password, $db_password)) {
+                // ⛔️ ห้ามใช้ session_regenerate_id บน InfinityFree/MAMP เพราะ Session จะหลุดง่าย
+                // session_regenerate_id(true);
+                
+                // ✅ บันทึก Session ลงไฟล์ทันที! (นี่คือตัวแก้ Loop ที่สำคัญที่สุด)
+                session_write_close();
 
-                session_regenerate_id(true);
-
-                $_SESSION['user_id']       = $id;
-                $_SESSION['username']      = $db_username;
-                $_SESSION['display_name']  = $display_name;
-                $_SESSION['role']          = $role;
-                $_SESSION['class_level']   = $class_level; // เก็บชั้นเรียนแทน
-
-                $_SESSION['login_attempts'] = 0;
-                $_SESSION['last_attempt_time'] = time();
-
-                switch ($role) {
-                    case 'developer': header("Location: dashboard_dev.php"); break;
-                    case 'teacher':   header("Location: dashboard_teacher.php"); break;
-                    case 'student':   header("Location: dashboard_student.php"); break;
-                    case 'parent':    header("Location: dashboard_parent.php"); break;
-                    default:          header("Location: index.php"); break;
+                // เลือกหน้าที่จะไป
+                $target = "index.php";
+                switch ($db_role) {
+                    case 'student':   $target = "dashboard_student.php"; break;
+                    case 'teacher':   $target = "dashboard_teacher.php"; break;
+                    case 'parent':    $target = "dashboard_parent.php"; break;
+                    case 'developer': $target = "dashboard_dev.php"; break;
                 }
+
+                // Redirect
+                header("Location: " . $target);
                 exit;
 
             } else {
                 $error = "รหัสผ่านไม่ถูกต้อง";
-                $_SESSION['login_attempts']++;
-                $_SESSION['last_attempt_time'] = time();
             }
-
         } else {
             $error = "ไม่พบผู้ใช้งานนี้";
-            $_SESSION['login_attempts']++;
-            $_SESSION['last_attempt_time'] = time();
         }
-
         $stmt->close();
     }
 }
@@ -102,10 +91,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && empty($error)) {
 <html lang="th">
 <head>
 <meta charset="UTF-8">
-<title>Login</title>
+<title>Login - Bankha Withaya School</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Itim&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Itim&display=swap" rel="stylesheet">
 <style>
 body {
     margin:0; padding:0;
@@ -199,26 +188,28 @@ label { display:block; margin:10px 0 5px; }
 input {
     width:100%; padding:12px; border-radius:12px; border:none;
     margin-bottom:15px; font-size:1rem; outline:none; background:rgba(255,255,255,0.7);
+    box-sizing: border-box;
 }
 .btn-login {
     width:100%; padding:12px; border:none; border-radius:12px;
     background:#ffffff; color:#d70040; font-size:1.1rem; cursor:pointer; font-weight:bold;
+    transition: 0.3s;
 }
-.btn-login:hover { background:#ffecec; }
+.btn-login:hover { background:#ffecec; transform: scale(1.02); }
 .error {
-    background:rgba(38, 0, 255, 0.4); padding:10px; border-radius:10px;
+    background:rgba(255, 0, 0, 0.6); padding:10px; border-radius:10px;
     margin-bottom:10px; text-align:center; backdrop-filter:blur(5px);
+    border: 1px solid rgba(255,255,255,0.3);
 }
 
 .school-logo {
     text-align: center;
     margin-bottom: 25px;
-
     animation: fadeIn 1.2s ease-out;
 }
 
 .school-logo img {
-    width: 300px; 
+    width: 250px; 
     height: auto;
     filter: drop-shadow(0 6px 10px rgba(0,0,0,0.35));
 
@@ -231,13 +222,11 @@ input {
 .school-title {
     display: block;
     margin-top: 10px;
-
     font-size: 1.35rem;
     font-weight: 700;
     color: #ffffff;
     letter-spacing: 1px;
     text-shadow: 0 2px 6px rgba(0,0,0,0.4);
-
     animation: fadeInText 1.8s ease-out;
 }
 
@@ -246,13 +235,6 @@ input {
     0%   { transform: translateY(0px); }
     50%  { transform: translateY(-6px); }
     100% { transform: translateY(0px); }
-}
-
-/* แสงกระพริบแบบ Premium */
-@keyframes glowPulse {
-    0%   { filter: drop-shadow(0 6px 12px rgba(255,255,200,0.25)); }
-    50%  { filter: drop-shadow(0 8px 15px rgba(255,240,150,0.45)); }
-    100% { filter: drop-shadow(0 6px 12px rgba(255,255,200,0.25)); }
 }
 
 /* เฟดเข้า */
@@ -265,34 +247,35 @@ input {
     from { opacity: 0; transform: translateY(6px); }
     to   { opacity: 1; transform: translateY(0px); }
 }
-
 </style>
 </head>
 <body>
 
-<div class="school-logo">
-    <img src="logo.png" alt="School Logo">
-    <span class="school-title">Bankha Withaya School</span>
-</div>
+<div style="display:flex; flex-direction:column; align-items:center;">
+    <div class="school-logo">
+        <img src="logo.png" alt="School Logo" onerror="this.style.display='none'">
+        <span class="school-title">Bankha Withaya School</span>
+    </div>
 
-<div class="glass-card">
-    <h2>เข้าสู่ระบบ</h2>
-    <div class="subtitle">Classroom Management System</div>
+    <div class="glass-card">
+        <h2>เข้าสู่ระบบ</h2>
+        <div class="subtitle">Classroom Management System</div>
 
-    <?php if ($error): ?>
-        <div class="error"><?= htmlspecialchars($error) ?></div>
-    <?php endif; ?>
+        <?php if ($error): ?>
+            <div class="error"><?= htmlspecialchars($error) ?></div>
+        <?php endif; ?>
 
-    <form method="post">
-        <label>Username :</label>
-        <input type="text" name="username" required autocomplete="username">
+        <form method="post">
+            <label>Username :</label>
+            <input type="text" name="username" required autocomplete="username">
 
-        <label>Password :</label>
-        <input type="password" name="password" required autocomplete="current-password">
+            <label>Password :</label>
+            <input type="password" name="password" required autocomplete="current-password">
 
-        <button class="btn-login" type="submit">เข้าสู่ระบบ</button>
-    </form>
+            <button class="btn-login" type="submit">เข้าสู่ระบบ</button>
+        </form>
 
+    </div>
 </div>
 </body>
 </html>
