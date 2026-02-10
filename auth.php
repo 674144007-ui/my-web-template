@@ -1,34 +1,90 @@
 <?php
-// auth.php - Session Manager (No Loop Version)
+// auth.php - ระบบตรวจสอบสิทธิ์ (ฉบับแก้ Loop หายขาด)
 
-// 1. เริ่ม Buffer ทันที
-if (ob_get_level() == 0) ob_start();
+// 1. เริ่ม Session ทันทีถ้ายังไม่มี
+if (session_status() === PHP_SESSION_NONE) {
+    // บังคับใช้ Cookie ให้ครอบคลุมทุกหน้า
+    session_set_cookie_params(0, '/');
+    session_start();
+}
 
-// 2. ป้องกัน Browser Cache หน้าเว็บ (สาเหตุหลักของ Loop)
+// 2. ป้องกัน Browser Cache (สำคัญมากเวลาเปลี่ยน Role)
 header("Cache-Control: no-store, no-cache, must-revalidate, max-age=0");
 header("Cache-Control: post-check=0, pre-check=0", false);
 header("Pragma: no-cache");
 
-// 3. เริ่ม Session
-if (session_status() === PHP_SESSION_NONE) {
-    // บังคับ Cookie Path ให้ใช้ได้ทั้งเว็บ
-    session_set_cookie_params(0, '/');
-    
-    // ตั้งชื่อ Session ใหม่ หนีค่าเก่าที่ค้างใน Browser
-    session_name('NO_LOOP_SYSTEM');
-    
-    session_start();
-}
-
 /**
- * ฟังก์ชันตรวจสอบสถานะ Login
+ * ตรวจสอบว่า Login หรือยัง
  */
 function isLoggedIn() {
     return isset($_SESSION['user_id']) && !empty($_SESSION['user_id']);
 }
 
 /**
- * ดึงข้อมูลผู้ใช้
+ * ตรวจสอบสิทธิ์ (ฉบับหยุด Loop)
+ * @param array|string $allowed_roles บทบาทที่อนุญาตให้เข้า
+ */
+function requireRole($allowed_roles) {
+    // 1. ถ้ายังไม่ Login ให้ไปหน้า Login
+    if (!isLoggedIn()) {
+        header("Location: index.php");
+        exit;
+    }
+
+    // 2. แปลงให้เป็น Array เสมอ (ป้องกัน Error เวลาส่งค่าเดียว)
+    if (!is_array($allowed_roles)) {
+        $allowed_roles = [$allowed_roles];
+    }
+
+    // 3. ดึง Role ปัจจุบันจาก Session
+    $my_role = $_SESSION['role'] ?? 'unknown';
+
+    // 🔥 Special Fix: ให้ Admin มีสิทธิ์เท่ากับ Developer เสมอ
+    if ($my_role === 'admin') {
+        $my_role = 'developer';
+    }
+
+    // 4. ตรวจสอบสิทธิ์ (Check)
+    // ถ้า Role ของเรา ไม่อยู่ในกลุ่มที่อนุญาต
+    if (!in_array($my_role, $allowed_roles)) {
+        
+        // ⛔ STOP LOOP: แสดงหน้าจอ Error แทนการ Redirect
+        // วิธีนี้จะทำให้คุณไม่เด้งกลับไปหน้าเดิม แต่จะเห็นชัดเจนว่าติดที่ตรงไหน
+        http_response_code(403);
+        echo "<!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset='utf-8'>
+            <title>Access Denied</title>
+            <style>
+                body { background:#0f172a; color:white; font-family:sans-serif; display:flex; justify-content:center; align-items:center; height:100vh; margin:0; }
+                .box { background:#1e293b; padding:40px; border-radius:15px; text-align:center; border:2px solid #ef4444; max-width:500px; box-shadow:0 10px 30px rgba(0,0,0,0.5); }
+                h1 { color:#ef4444; font-size:3rem; margin:0 0 20px 0; }
+                p { font-size:1.1rem; line-height:1.6; color:#cbd5e1; }
+                .role-tag { background:#334155; padding:5px 10px; border-radius:5px; color:#facc15; font-weight:bold; }
+                .btn { display:inline-block; margin-top:20px; padding:10px 20px; background:#3b82f6; color:white; text-decoration:none; border-radius:8px; font-weight:bold; }
+                .btn:hover { background:#2563eb; }
+            </style>
+        </head>
+        <body>
+            <div class='box'>
+                <h1>⛔ Access Denied</h1>
+                <p>ระบบปฏิเสธการเข้าถึงหน้านี้ เพราะสิทธิ์ของคุณไม่ถูกต้อง</p>
+                <div style='margin:20px 0; text-align:left; background:rgba(0,0,0,0.2); padding:15px; border-radius:10px;'>
+                    <p>👤 <strong>Role ของคุณ:</strong> <span class='role-tag'>$my_role</span></p>
+                    <p>🔒 <strong>Role ที่ต้องการ:</strong> " . implode(", ", $allowed_roles) . "</p>
+                </div>
+                <p>หากคุณคิดว่านี่คือข้อผิดพลาด โปรดลอง Logout แล้ว Login ใหม่</p>
+                <a href='index.php' class='btn'>⬅ กลับหน้าหลัก</a>
+            </div>
+        </body>
+        </html>";
+        exit; // หยุดการทำงานทันที (ไม่เด้งกลับ)
+    }
+}
+
+/**
+ * ดึงข้อมูลผู้ใช้ปัจจุบัน
  */
 function currentUser() {
     if (!isLoggedIn()) return null;
@@ -37,41 +93,10 @@ function currentUser() {
         'username'      => $_SESSION['username'],
         'display_name'  => $_SESSION['display_name'],
         'role'          => $_SESSION['role'],
+        'original_role' => $_SESSION['original_role'] ?? null,
         'class_level'   => $_SESSION['class_level'] ?? null,
         'subject_group' => $_SESSION['subject_group'] ?? null,
         'teacher_department' => $_SESSION['teacher_department'] ?? null
     ];
-}
-
-/**
- * ฟังก์ชันตรวจสอบสิทธิ์ (Stop Loop Logic)
- */
-function requireRole($roles) {
-    // 1. ถ้ายังไม่ล็อกอิน
-    if (!isLoggedIn()) {
-        // ดีดกลับหน้า Login ทันที
-        header("Location: index.php");
-        exit;
-    }
-
-    if (!is_array($roles)) $roles = [$roles];
-    $myRole = $_SESSION['role'] ?? '';
-
-    // 2. ถ้าล็อกอินแล้ว แต่ Role ผิด (Access Denied)
-    // ❌ ห้าม Redirect กลับ index.php เพราะจะทำให้เกิด Loop ❌
-    // ✅ ให้แสดงข้อความ Error และหยุดทำงานแทน
-    if (!in_array($myRole, $roles)) {
-        http_response_code(403);
-        echo "<!DOCTYPE html><html><head><meta charset='utf-8'><title>Access Denied</title></head>";
-        echo "<body style='background:#1a1a1a; color:white; font-family:sans-serif; text-align:center; padding-top:50px;'>";
-        echo "<h1 style='color:#ff4444; font-size:3rem;'>⛔ 403 Access Denied</h1>";
-        echo "<h2>คุณไม่มีสิทธิ์เข้าถึงหน้านี้</h2>";
-        echo "<p>Role ของคุณคือ: <strong style='color:#ffff00;'>" . htmlspecialchars($myRole) . "</strong></p>";
-        echo "<p>หน้านี้ต้องการ: <strong>" . implode(", ", $roles) . "</strong></p>";
-        echo "<br><a href='index.php' style='background:white; color:black; padding:10px 20px; text-decoration:none; border-radius:5px; font-weight:bold;'>กลับหน้า Login</a>";
-        echo "<br><br><a href='logout.php' style='color:#ff8888;'>ออกจากระบบ</a>";
-        echo "</body></html>";
-        exit;
-    }
 }
 ?>

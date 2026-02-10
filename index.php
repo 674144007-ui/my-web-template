@@ -1,5 +1,7 @@
 <?php
-// เริ่ม Buffer บรรทัดแรกสุด
+// index.php - Login Page (with Admin-to-Developer Auto Fix)
+
+// เริ่ม Buffer บรรทัดแรกสุด ป้องกัน Header Already Sent
 if (ob_get_level() == 0) ob_start();
 
 require_once 'auth.php';
@@ -11,16 +13,31 @@ error_reporting(E_ALL);
 
 $error = "";
 
-// 🔄 ถ้า Login อยู่แล้ว ให้ไป Dashboard เลย (ไม่ต้อง Login ซ้ำ)
-if (isLoggedIn()) {
-    $role = $_SESSION['role'];
-    $redirect = "index.php";
+// 🔄 ฟังก์ชันหาหน้า Dashboard ตาม Role
+function getDashboardByRole($role) {
     switch ($role) {
-        case 'student':   $redirect = "dashboard_student.php"; break;
-        case 'teacher':   $redirect = "dashboard_teacher.php"; break;
-        case 'parent':    $redirect = "dashboard_parent.php"; break;
-        case 'developer': $redirect = "dashboard_dev.php"; break;
+        case 'student':   return "dashboard_student.php";
+        case 'teacher':   return "dashboard_teacher.php";
+        case 'parent':    return "dashboard_parent.php";
+        case 'developer': return "dashboard_dev.php";
+        // กรณีเป็น admin ให้ส่งไปหน้า dev เหมือนกัน
+        case 'admin':     return "dashboard_dev.php"; 
+        default:          return "logout.php"; // Role แปลกปลอม ให้ Logout กันเหนียว
     }
+}
+
+// 🔄 ถ้า Login อยู่แล้ว ให้ไป Dashboard เลย
+if (isLoggedIn()) {
+    $role = $_SESSION['role'] ?? '';
+    
+    // 🔥 AUTO-FIX: ถ้า Session ค้างเป็น admin ให้แก้เป็น developer ทันที แล้ว Refresh
+    if ($role === 'admin') {
+        $_SESSION['role'] = 'developer';
+        header("Location: dashboard_dev.php");
+        exit;
+    }
+
+    $redirect = getDashboardByRole($role);
     header("Location: " . $redirect);
     exit;
 }
@@ -33,57 +50,57 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (empty($username) || empty($password)) {
         $error = "กรุณากรอกข้อมูลให้ครบ";
     } else {
-        // ใช้ SQL Prepared Statement เพื่อความปลอดภัย
-        $stmt = $conn->prepare("
-            SELECT id, username, password, display_name, role, class_level, subject_group, teacher_department
-            FROM users
-            WHERE username = ?
-            LIMIT 1
-        ");
-        $stmt->bind_param("s", $username);
-        $stmt->execute();
-        $stmt->store_result();
-        $stmt->bind_result($id, $db_user, $db_pass, $db_name, $db_role, $db_class, $db_subj, $db_dept);
+        // SQL: Select ข้อมูล (ใช้ @ กัน Error กรณีคอลัมน์ไม่ครบ แต่ควรครบแล้วจากขั้นตอนก่อนหน้า)
+        $sql = "SELECT id, username, password, display_name, role, class_level, subject_group, teacher_department 
+                FROM users 
+                WHERE username = ? 
+                LIMIT 1";
 
-        if ($stmt->num_rows === 1) {
-            $stmt->fetch();
-            if (password_verify($password, $db_pass)) {
-                
-                // ✅ Login สำเร็จ: เก็บข้อมูลลง Session
-                $_SESSION['user_id'] = $id;
-                $_SESSION['username'] = $db_user;
-                $_SESSION['display_name'] = $db_name;
-                $_SESSION['role'] = $db_role;
-                $_SESSION['class_level'] = $db_class;
-                $_SESSION['subject_group'] = $db_subj;
-                $_SESSION['teacher_department'] = $db_dept;
+        if ($stmt = $conn->prepare($sql)) {
+            $stmt->bind_param("s", $username);
+            $stmt->execute();
+            $stmt->store_result();
+            
+            // Bind ตัวแปรรับค่า
+            $stmt->bind_result($id, $db_user, $db_pass, $db_name, $db_role, $db_class, $db_subj, $db_dept);
 
-                // ⛔️ ห้ามใช้ session_regenerate_id บน InfinityFree/MAMP เพราะ Session จะหลุดง่าย
-                // session_regenerate_id(true);
-                
-                // ✅ บันทึก Session ลงไฟล์ทันที! (นี่คือตัวแก้ Loop ที่สำคัญที่สุด)
-                session_write_close();
+            if ($stmt->num_rows === 1) {
+                $stmt->fetch();
+                if (password_verify($password, $db_pass)) {
+                    
+                    // 🔥 AUTO-FIX: ถ้าใน Database เป็น admin ให้เปลี่ยนเป็น developer ทันที
+                    if ($db_role === 'admin') {
+                        $db_role = 'developer';
+                    }
 
-                // เลือกหน้าที่จะไป
-                $target = "index.php";
-                switch ($db_role) {
-                    case 'student':   $target = "dashboard_student.php"; break;
-                    case 'teacher':   $target = "dashboard_teacher.php"; break;
-                    case 'parent':    $target = "dashboard_parent.php"; break;
-                    case 'developer': $target = "dashboard_dev.php"; break;
+                    // ✅ Login สำเร็จ: เก็บข้อมูลลง Session
+                    $_SESSION['user_id'] = $id;
+                    $_SESSION['username'] = $db_user;
+                    $_SESSION['display_name'] = $db_name;
+                    $_SESSION['role'] = $db_role; // ค่านี้จะเป็น developer แน่นอน
+                    $_SESSION['class_level'] = $db_class;
+                    $_SESSION['subject_group'] = $db_subj;
+                    $_SESSION['teacher_department'] = $db_dept;
+
+                    // บันทึก Session ทันที ป้องกัน Race Condition
+                    session_write_close();
+
+                    // หาปลายทางแล้ว Redirect
+                    $target = getDashboardByRole($db_role);
+                    header("Location: " . $target);
+                    exit;
+
+                } else {
+                    $error = "รหัสผ่านไม่ถูกต้อง";
                 }
-
-                // Redirect
-                header("Location: " . $target);
-                exit;
-
             } else {
-                $error = "รหัสผ่านไม่ถูกต้อง";
+                $error = "ไม่พบผู้ใช้งานนี้";
             }
+            $stmt->close();
         } else {
-            $error = "ไม่พบผู้ใช้งานนี้";
+            $error = "System Error: SQL Prepare Failed (โปรดตรวจสอบ db.php หรือฐานข้อมูล)";
+            error_log("SQL Prepare Error: " . $conn->error);
         }
-        $stmt->close();
     }
 }
 ?>
