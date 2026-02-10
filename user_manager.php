@@ -1,5 +1,5 @@
 <?php
-// user_manager.php - เพิ่มปุ่ม Import CSV
+// user_manager.php - เพิ่มปุ่ม Edit User
 if (ob_get_level() == 0) ob_start();
 session_start();
 require_once 'auth.php';
@@ -28,7 +28,7 @@ if (isset($_GET['delete'])) {
     }
 }
 
-// --- Search & Filter Logic ---
+// --- Search & Filter ---
 $where_clauses = ["1=1"]; 
 $search = isset($_GET['search']) ? trim($_GET['search']) : '';
 if (!empty($search)) {
@@ -64,7 +64,6 @@ $result = $conn->query($sql);
     body { font-family: 'Sarabun', sans-serif; background: #f1f5f9; padding: 20px; }
     .container { max-width: 1200px; margin: 0 auto; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
     
-    /* Header & Tools */
     .header-bar { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #e2e8f0; padding-bottom: 15px; margin-bottom: 20px; }
     .tools-group { display: flex; gap: 10px; }
 
@@ -78,7 +77,12 @@ $result = $conn->query($sql);
     .btn-add { background: #10b981; color: white; display: inline-flex; align-items: center; gap: 5px; }
     .btn-import { background: #0ea5e9; color: white; display: inline-flex; align-items: center; gap: 5px; }
     .btn-import:hover { background: #0284c7; }
-    .btn-reset { background: #f59e0b; color: white; padding: 5px 10px; font-size: 0.8rem; }
+    
+    /* ปุ่ม Actions */
+    .btn-edit { background: #3b82f6; color: white; padding: 5px 10px; font-size: 0.8rem; margin-right: 2px; }
+    .btn-edit:hover { background: #2563eb; }
+    .btn-reset { background: #f59e0b; color: white; padding: 5px 10px; font-size: 0.8rem; margin-right: 2px; }
+    .btn-reset:hover { background: #d97706; }
     .btn-del { background: #ef4444; color: white; padding: 5px 10px; font-size: 0.8rem; }
     
     table { width: 100%; border-collapse: collapse; margin-top: 10px; }
@@ -101,7 +105,7 @@ $result = $conn->query($sql);
     <div class="header-bar">
         <h2 style="margin:0; color:#1e293b;">👥 จัดการผู้ใช้ (User Manager)</h2>
         <div class="tools-group">
-            <a href="import_users.php" class="btn btn-import">📂 นำเข้ารายชื่อ (Excel/CSV)</a>
+            <a href="import_users.php" class="btn btn-import">📂 นำเข้า Excel/CSV</a>
             <a href="add_user.php" class="btn btn-add">+ เพิ่มผู้ใช้</a>
             <a href="dashboard_dev.php" class="btn" style="background:#64748b; color:white;">⬅ กลับ</a>
         </div>
@@ -157,11 +161,11 @@ $result = $conn->query($sql);
         <thead>
             <tr>
                 <th>ID</th>
-                <th>Username/รหัสนักเรียน</th>
+                <th>Username/รหัส</th>
                 <th>ชื่อ-นามสกุล</th>
                 <th>Role</th>
                 <th>ข้อมูลสังกัด</th>
-                <th style="text-align:center;">จัดการ</th>
+                <th style="text-align:center; min-width: 200px;">จัดการ</th>
             </tr>
         </thead>
         <tbody>
@@ -183,13 +187,16 @@ $result = $conn->query($sql);
                         <?php else: ?> - <?php endif; ?>
                     </td>
                     <td style="text-align:center;">
+                        <a href="edit_user.php?id=<?= $row['id'] ?>" class="btn btn-edit" title="แก้ไขข้อมูล">✏️ Edit</a>
+
                         <form method="post" style="display:inline;" onsubmit="return confirm('ยืนยันรีเซ็ตรหัสผ่านเป็น 12345678 ?');">
                             <input type="hidden" name="action" value="reset_password">
                             <input type="hidden" name="user_id" value="<?= $row['id'] ?>">
-                            <button type="submit" class="btn btn-reset">🔑 Reset</button>
+                            <button type="submit" class="btn btn-reset" title="Reset Password">🔑</button>
                         </form>
+                        
                         <?php if($row['id'] != $_SESSION['user_id']): ?>
-                            <a href="?delete=<?= $row['id'] ?>" class="btn btn-del" onclick="return confirm('ลบผู้ใช้นี้?');">🗑️</a>
+                            <a href="?delete=<?= $row['id'] ?>" class="btn btn-del" onclick="return confirm('ลบผู้ใช้นี้?');" title="ลบผู้ใช้">🗑️</a>
                         <?php endif; ?>
                     </td>
                 </tr>
