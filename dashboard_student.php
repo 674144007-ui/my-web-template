@@ -1,5 +1,5 @@
 <?php
-// dashboard_student.php - อัปเดตเพิ่มฟีเจอร์เกม
+// dashboard_student.php - อัปเดตเพิ่มฟีเจอร์เกม และทางเข้า Ultimate Lab
 if (ob_get_level() == 0) ob_start();
 session_start();
 require_once 'auth.php';
@@ -39,13 +39,15 @@ $is_sim = (isset($_SESSION['dev_simulation_mode']) || (isset($_SESSION['original
     .xp-badge { font-size: 0.8rem; background: #fbbf24; color: #78350f; padding: 2px 8px; border-radius: 10px; font-weight: bold; }
     .avatar-img { width: 50px; height: 50px; border-radius: 50%; border: 2px solid #e2e8f0; object-fit: cover; }
     
-    .logout-btn { color: #ef4444; text-decoration: none; border: 1px solid #ef4444; padding: 5px 10px; border-radius: 8px; font-size: 0.9rem; margin-left: 10px; }
+    .logout-btn { color: #ef4444; text-decoration: none; border: 1px solid #ef4444; padding: 5px 10px; border-radius: 8px; font-size: 0.9rem; margin-left: 10px; transition: 0.2s; }
+    .logout-btn:hover { background: #ef4444; color: white; }
 
     /* Grid */
     .card-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(250px,1fr)); gap:25px; margin-top: 20px; }
     .card { background:white; padding:25px; border-radius:15px; box-shadow:0 4px 10px rgba(0,0,0,0.05); transition:0.3s; text-align:center; border:1px solid #e2e8f0; position:relative; overflow:hidden; }
     .card:hover { transform:translateY(-5px); box-shadow:0 10px 20px rgba(0,0,0,0.1); }
-    .btn { display:block; width:100%; padding:10px 0; margin-top:15px; background:#3b82f6; color:white; text-decoration:none; border-radius:8px; font-weight:bold; }
+    .btn { display:block; width:100%; padding:10px 0; margin-top:15px; background:#3b82f6; color:white; text-decoration:none; border-radius:8px; font-weight:bold; transition: 0.2s; }
+    .btn:hover { filter: brightness(1.1); }
     
     .c-profile { background: linear-gradient(135deg, #1e293b, #0f172a); color:white; }
     .c-profile .btn { background:#fbbf24; color:black; }
@@ -55,6 +57,12 @@ $is_sim = (isset($_SESSION['dev_simulation_mode']) || (isset($_SESSION['original
     
     .c-leader { background: linear-gradient(135deg, #f59e0b, #b45309); color:white; }
     
+    /* สไตล์พิเศษสำหรับห้องแล็บ */
+    .c-lab { background: linear-gradient(135deg, #0f172a, #334155); color:white; border: 1px solid #38bdf8; box-shadow: 0 0 15px rgba(56, 189, 248, 0.2); }
+    .c-lab h3 { color: #38bdf8; text-shadow: 0 0 5px rgba(56, 189, 248, 0.5); }
+    .c-lab p { color: #cbd5e1; }
+    .c-lab .btn { background: linear-gradient(135deg, #38bdf8, #0ea5e9); color:#0f172a; box-shadow: 0 4px 10px rgba(56, 189, 248, 0.4); text-transform: uppercase; letter-spacing: 1px;}
+    
     .sim-bar { background: #ef4444; color: white; padding: 10px; text-align: center; margin-bottom: 20px; border-radius: 8px; }
 </style>
 </head>
@@ -62,7 +70,7 @@ $is_sim = (isset($_SESSION['dev_simulation_mode']) || (isset($_SESSION['original
 
 <?php if($is_sim): ?>
 <div class="sim-bar">
-    ⚠️ คุณกำลังใช้งานโหมดจำลอง (Simulation Mode) <a href="switch_mode.php?action=exit" style="color:white; font-weight:bold;">[ออก]</a>
+    ⚠️ คุณกำลังใช้งานโหมดจำลอง (Simulation Mode) <a href="switch_mode.php?action=exit" style="color:white; font-weight:bold; text-decoration: underline;">[ออก]</a>
 </div>
 <?php endif; ?>
 
@@ -84,6 +92,12 @@ $is_sim = (isset($_SESSION['dev_simulation_mode']) || (isset($_SESSION['original
 
 <div class="card-grid">
     
+    <div class="card c-lab">
+        <h3>🧪 Ultimate Survival Lab</h3>
+        <p>ผสมสารเคมี ทำภารกิจ และเอาชีวิตรอดจากห้องทดลอง!</p>
+        <a href="mix.php" class="btn">🔥 เข้าห้องแล็บด่วน!</a>
+    </div>
+
     <div class="card c-daily">
         <h3>🔮 Daily Alchemy</h3>
         <p><?= $daily_played ? "✅ ทำภารกิจวันนี้แล้ว" : "ตอบคำถามประจำวัน รับ XP!" ?></p>
@@ -101,14 +115,8 @@ $is_sim = (isset($_SESSION['dev_simulation_mode']) || (isset($_SESSION['original
         <p>กิลด์, กรอบรูป, เพื่อน</p>
         <div style="display:flex; gap:10px;">
             <a href="profile.php" class="btn">โปรไฟล์</a>
-            <a href="chat.php" class="btn" style="background:#10b981;">แชท</a>
+            <a href="chat.php" class="btn" style="background:#10b981; color:white;">💬 แชท</a>
         </div>
-    </div>
-
-    <div class="card">
-        <h3>⚗️ ห้องแล็บ</h3>
-        <p>ทดลองผสมสารเคมี</p>
-        <a href="mix.php" class="btn">เข้าห้องแล็บ</a>
     </div>
 
     <div class="card">

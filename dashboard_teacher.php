@@ -1,5 +1,5 @@
 <?php
-// dashboard_teacher.php - Teacher Dashboard (Update: Profile Widget)
+// dashboard_teacher.php - Teacher Dashboard (Update: Profile Widget & Lab Entry)
 if (ob_get_level() == 0) ob_start();
 session_start();
 require_once 'auth.php';
@@ -53,7 +53,7 @@ $is_sim = (isset($_SESSION['dev_simulation_mode']) || (isset($_SESSION['original
     .f-fire { border: 2px solid #ef4444; box-shadow: 0 0 5px #ef4444; }
     .f-neon { border: 2px solid #06b6d4; box-shadow: 0 0 5px #06b6d4; }
 
-    /* Dropdown Menu (Optional if needed, but keeping it simple with links) */
+    /* Dropdown Menu */
     .logout-btn { 
         color: #ef4444; text-decoration: none; font-weight: bold; font-size: 0.9rem; 
         border: 1px solid #ef4444; padding: 5px 10px; border-radius: 8px; transition: 0.2s;
@@ -65,11 +65,18 @@ $is_sim = (isset($_SESSION['dev_simulation_mode']) || (isset($_SESSION['original
     .card-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:25px; margin-top: 20px; }
     .card { background:white; padding:25px; border-radius:15px; box-shadow:0 4px 10px rgba(0,0,0,0.05); transition:0.3s; text-align:center; border:1px solid #e2e8f0; }
     .card:hover { transform:translateY(-5px); box-shadow:0 10px 20px rgba(0,0,0,0.1); }
-    .btn { display:block; width:100%; padding:10px 0; margin-top:15px; background:#3b82f6; color:white; text-decoration:none; border-radius:8px; font-weight:bold; }
+    .btn { display:block; width:100%; padding:10px 0; margin-top:15px; background:#3b82f6; color:white; text-decoration:none; border-radius:8px; font-weight:bold; transition: 0.2s; }
+    .btn:hover { filter: brightness(1.1); }
     
     .c-profile { background: linear-gradient(135deg, #1e293b, #0f172a); color:white; }
     .c-profile .btn { background:#fbbf24; color:black; }
     .c-mission { background: linear-gradient(135deg, #4f46e5, #312e81); color:white; }
+    
+    /* สไตล์พิเศษสำหรับห้องแล็บครู */
+    .c-lab { background: linear-gradient(135deg, #0f172a, #334155); color:white; border: 1px solid #38bdf8; }
+    .c-lab h3 { color: #38bdf8; }
+    .c-lab p { color: #cbd5e1; }
+    .c-lab .btn { background: #38bdf8; color: #0f172a; box-shadow: 0 4px 10px rgba(56, 189, 248, 0.4); }
 
     /* Sim Bar */
     .sim-bar { background: #ef4444; color: white; padding: 10px; text-align: center; margin-bottom: 20px; border-radius: 8px; font-weight: bold; }
@@ -109,32 +116,40 @@ $is_sim = (isset($_SESSION['dev_simulation_mode']) || (isset($_SESSION['original
 </div>
 
 <div class="card-grid">
+    
+    <div class="card c-lab">
+        <h3>🧪 Ultimate Survival Lab</h3>
+        <p>เข้าห้องทดลองเพื่อทดสอบการผสมสารเคมีด้วยตนเอง</p>
+        <a href="mix.php" class="btn">🔥 ทดสอบห้องแล็บ</a>
+    </div>
+
+    <div class="card c-mission">
+        <h3>⚔️ Mission Control</h3>
+        <p>สร้างภารกิจ, เควส, และมอบหมายงานแล็บ</p>
+        <a href="create_quest.php" class="btn" style="background:white; color:#312e81;">⚙️ ระบบจัดการเควส</a>
+    </div>
+
+    <div class="card">
+        <h3>📋 ตรวจงาน/ประวัติ</h3>
+        <p>ดูงานและผลการทดลองที่นักเรียนส่งมา</p>
+        <a href="teacher_assignments.php" class="btn">ดูงานของนักเรียน</a>
+    </div>
+
+    <div class="card">
+        <h3>📚 คลังเอกสาร</h3>
+        <p>ใบงานและสื่อการสอนของฉัน</p>
+        <a href="assignment_library.php" class="btn" style="background:#64748b;">จัดการเอกสาร</a>
+    </div>
+    
     <div class="card c-profile">
         <h3>👤 ข้อมูลส่วนตัว</h3>
-        <p>แก้ไขรูป, กรอบ, แชทกับเพื่อน</p>
+        <p>แก้ไขรูป, กรอบ, แชทกับบุคลากร/นักเรียน</p>
         <div style="display:flex; gap:10px;">
             <a href="profile.php" class="btn">โปรไฟล์</a>
             <a href="chat.php" class="btn" style="background:#10b981; color:white;">💬 แชท</a>
         </div>
     </div>
 
-    <div class="card c-mission">
-        <h3>⚔️ Mission Control</h3>
-        <p>สร้างภารกิจ, เควส, และแล็บ</p>
-        <a href="create_quest.php" class="btn" style="background:white; color:#312e81;">เข้าสู่ระบบ</a>
-    </div>
-
-    <div class="card">
-        <h3>📋 ตรวจงาน/ประวัติ</h3>
-        <p>ดูงานที่นักเรียนส่งมา</p>
-        <a href="teacher_assignments.php" class="btn">ดูงาน</a>
-    </div>
-
-    <div class="card">
-        <h3>📚 คลังเอกสาร</h3>
-        <p>ใบงานและสื่อการสอน</p>
-        <a href="assignment_library.php" class="btn" style="background:#64748b;">จัดการ</a>
-    </div>
 </div>
 
 </body>
