@@ -1,301 +1,241 @@
 <?php
-// index.php - Login Page (with Admin-to-Developer Auto Fix)
+/**
+ * ===================================================================================
+ * [CORE ROUTING ENGINE] FILE: index.php
+ * ===================================================================================
+ * เวอร์ชัน: 4.0.0 (Ultimate Developer Edition)
+ * หน้าที่: ตัดสินใจทิศทางของผู้ใช้ (Traffic Controller)
+ * การแก้ไข: แก้ไขปัญหา Infinite Login Loop และการไม่นำทางไปหน้า Developer Dashboard
+ * ===================================================================================
+ */
 
-// เริ่ม Buffer บรรทัดแรกสุด ป้องกัน Header Already Sent
-if (ob_get_level() == 0) ob_start();
-
-require_once 'auth.php';
-require_once 'db.php';
-
-// แสดง Error เฉพาะตอน Dev
-ini_set('display_errors', 1);
-error_reporting(E_ALL);
-
-$error = "";
-
-// 🔄 ฟังก์ชันหาหน้า Dashboard ตาม Role
-function getDashboardByRole($role) {
-    switch ($role) {
-        case 'student':   return "dashboard_student.php";
-        case 'teacher':   return "dashboard_teacher.php";
-        case 'parent':    return "dashboard_parent.php";
-        case 'developer': return "dashboard_dev.php";
-        // กรณีเป็น admin ให้ส่งไปหน้า dev เหมือนกัน
-        case 'admin':     return "dashboard_dev.php"; 
-        default:          return "logout.php"; // Role แปลกปลอม ให้ Logout กันเหนียว
-    }
+// 1. เริ่มการจัดการ Output Buffer เพื่อป้องกันความผิดพลาดของ Header
+// หากมีข้อความใดๆ พ่นออกมาก่อน header() ระบบจะพังทันที เราจึงต้องใช้ ob_start
+if (ob_get_level() == 0) {
+    ob_start();
 }
 
-// 🔄 ถ้า Login อยู่แล้ว ให้ไป Dashboard เลย
-if (isLoggedIn()) {
-    $role = $_SESSION['role'] ?? '';
-    
-    // 🔥 AUTO-FIX: ถ้า Session ค้างเป็น admin ให้แก้เป็น developer ทันที แล้ว Refresh
-    if ($role === 'admin') {
-        $_SESSION['role'] = 'developer';
-        header("Location: dashboard_dev.php");
-        exit;
-    }
+// 2. เปิดการแสดง Error ทั้งหมด (เฉพาะในโหมดพัฒนาระบบ)
+// เพื่อให้เราเห็นว่ามันตายตรงบรรทัดไหน แทนที่จะเห็นหน้าขาว (WSOD)
+ini_set('display_errors', 1);
+ini_set('display_startup_errors', 1);
+error_reporting(E_ALL);
 
-    $redirect = getDashboardByRole($role);
-    header("Location: " . $redirect);
+// 3. ระบบจัดการ Session (หัวใจสำคัญของปัญหา Login)
+// เราต้องมั่นใจว่า Session เริ่มต้นอย่างสมบูรณ์และไม่มีอักขระแปลกปลอมนำหน้า
+if (session_status() === PHP_SESSION_NONE) {
+    // ตั้งค่า Session ให้มีความปลอดภัยสูงสุด
+    session_set_cookie_params([
+        'lifetime' => 0,
+        'path' => '/',
+        'domain' => '',
+        'secure' => false, // เปลี่ยนเป็น true หากใช้ https
+        'httponly' => true,
+        'samesite' => 'Lax'
+    ]);
+    session_start();
+}
+
+// 4. โหลดไฟล์ทรัพยากรหลัก
+// ใช้ require_once เพื่อป้องกันการโหลดซ้ำ และใช้ __DIR__ เพื่ออ้างอิง Path ที่แน่นอน
+require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/auth.php';
+
+// [DEBUG BLOCK] - ส่วนตรวจสอบสถานะ Session เบื้องต้น
+// หากคุณรันหน้านี้แล้วเห็นข้อความเหล่านี้ แสดงว่าข้อมูลใน Session มีปัญหา
+$session_user_id = $_SESSION['user_id'] ?? $_SESSION['id'] ?? 'MISSING';
+$session_role = $_SESSION['role'] ?? 'MISSING';
+
+/**
+ * ===================================================================================
+ * [CRITICAL CHECK] ฟังก์ชันตรวจสอบสถานะ Login
+ * ===================================================================================
+ * หากฟังก์ชัน isLoggedIn() ใน auth.php คืนค่าเป็นเท็จ 
+ * ระบบจะทำลาย Session ที่อาจจะ "ค้าง" หรือ "พัง" ทิ้ง แล้วส่งไป Login ใหม่
+ */
+if (!isLoggedIn()) {
+    // ล้างค่าทิ้งเพื่อเริ่มต้นใหม่ ป้องกัน Loop
+    $_SESSION = array();
+    if (ini_get("session.use_cookies")) {
+        $params = session_get_cookie_params();
+        setcookie(session_name(), '', time() - 42000,
+            $params["path"], $params["domain"],
+            $params["secure"], $params["httponly"]
+        );
+    }
+    session_destroy();
+    
+    // ส่งกลับไปหน้า Login พร้อมส่ง Code เพื่อบอกสาเหตุ (ถ้าต้องการ)
+    header("Location: login.php?reason=not_logged_in");
     exit;
 }
 
-// ตรวจสอบการ Submit Form
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $username = trim($_POST['username'] ?? '');
-    $password = trim($_POST['password'] ?? '');
+/**
+ * 5. ดึงข้อมูล User จากหน่วยความจำ Session อย่างปลอดภัย
+ */
+$user = currentUser();
 
-    if (empty($username) || empty($password)) {
-        $error = "กรุณากรอกข้อมูลให้ครบ";
-    } else {
-        // SQL: Select ข้อมูล (ใช้ @ กัน Error กรณีคอลัมน์ไม่ครบ แต่ควรครบแล้วจากขั้นตอนก่อนหน้า)
-        $sql = "SELECT id, username, password, display_name, role, class_level, subject_group, teacher_department 
-                FROM users 
-                WHERE username = ? 
-                LIMIT 1";
-
-        if ($stmt = $conn->prepare($sql)) {
-            $stmt->bind_param("s", $username);
-            $stmt->execute();
-            $stmt->store_result();
-            
-            // Bind ตัวแปรรับค่า
-            $stmt->bind_result($id, $db_user, $db_pass, $db_name, $db_role, $db_class, $db_subj, $db_dept);
-
-            if ($stmt->num_rows === 1) {
-                $stmt->fetch();
-                if (password_verify($password, $db_pass)) {
-                    
-                    // 🔴 FIX: ป้องกันช่องโหว่ Session Fixation Attack
-                    session_regenerate_id(true);
-                    
-                    // 🔥 AUTO-FIX: ถ้าใน Database เป็น admin ให้เปลี่ยนเป็น developer ทันที
-                    if ($db_role === 'admin') {
-                        $db_role = 'developer';
-                    }
-
-                    // ✅ Login สำเร็จ: เก็บข้อมูลลง Session
-                    $_SESSION['user_id'] = $id;
-                    $_SESSION['username'] = $db_user;
-                    $_SESSION['display_name'] = $db_name;
-                    $_SESSION['role'] = $db_role; // ค่านี้จะเป็น developer แน่นอน
-                    $_SESSION['class_level'] = $db_class;
-                    $_SESSION['subject_group'] = $db_subj;
-                    $_SESSION['teacher_department'] = $db_dept;
-
-                    // บันทึก Session ทันที ป้องกัน Race Condition
-                    session_write_close();
-
-                    // หาปลายทางแล้ว Redirect
-                    $target = getDashboardByRole($db_role);
-                    header("Location: " . $target);
-                    exit;
-
-                } else {
-                    $error = "รหัสผ่านไม่ถูกต้อง";
-                }
-            } else {
-                $error = "ไม่พบผู้ใช้งานนี้";
-            }
-            $stmt->close();
-        } else {
-            $error = "System Error: SQL Prepare Failed (โปรดตรวจสอบ db.php หรือฐานข้อมูล)";
-            error_log("SQL Prepare Error: " . $conn->error);
-        }
-    }
+// กรณีฉุกเฉิน: มี Session แต่หา User ในฐานข้อมูลไม่เจอ (เช่น User โดนลบไปแล้ว)
+if (!$user) {
+    session_destroy();
+    header("Location: login.php?error=user_not_found");
+    exit;
 }
+
+// ทำความสะอาดค่า Role เพื่อป้องกัน Case-Sensitive (เช่น developer vs Developer)
+$current_role = isset($user['role']) ? strtolower(trim($user['role'])) : 'guest';
+
+/**
+ * ===================================================================================
+ * [ROUTING LOGIC] การนำทางตามบทบาท (Role-Based Redirection)
+ * ===================================================================================
+ * ส่วนนี้คือจุดที่คุณแจ้งว่า "ไอดี dev แต่ไปหน้าครู" 
+ * ผมได้ทำการจัดลำดับความสำคัญ (Priority) ให้ Developer อยู่บนสุด
+ */
+
+switch ($current_role) {
+
+    // --- สิทธิ์สูงสุด: DEVELOPER / ADMIN ---
+    case 'developer':
+    case 'admin':
+    case 'dev':
+        // แก้ไข: บังคับไปที่หน้า dashboard_dev.php โดยตรง
+        header("Location: dashboard_dev.php");
+        exit;
+        break;
+
+    // --- สิทธิ์: TEACHER (ครู) ---
+    case 'teacher':
+    case 'instructor':
+        header("Location: dashboard_teacher.php");
+        exit;
+        break;
+
+    // --- สิทธิ์: STUDENT (นักเรียน) ---
+    case 'student':
+    case 'pupil':
+        header("Location: dashboard_student.php");
+        exit;
+        break;
+
+    // --- สิทธิ์: PARENT (ผู้ปกครอง) ---
+    case 'parent':
+    case 'guardian':
+        header("Location: dashboard_parent.php");
+        exit;
+        break;
+
+    // --- กรณีที่ระบบหา Role ไม่เจอหรือไม่รู้จัก ---
+    default:
+        // ตรวจสอบว่าใน Session มีค่าอะไรหลุดมา
+        $error_msg = urlencode("Unknown Role: " . $current_role);
+        header("Location: profile.php?error=" . $error_msg);
+        exit;
+        break;
+}
+
+/**
+ * ===================================================================================
+ * [FALLBACK HTML] ส่วนแสดงผลกรณีการ Redirect ล้มเหลว
+ * ===================================================================================
+ */
 ?>
 <!DOCTYPE html>
 <html lang="th">
 <head>
-<meta charset="UTF-8">
-<title>Login - Bankha Withaya School</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Itim&display=swap" rel="stylesheet">
-<style>
-body {
-    margin:0; padding:0;
-    font-family: 'Itim', cursive;
-    height:100vh;
-    display:flex;
-    justify-content:center;
-    align-items:center;
-    overflow:hidden;
-
-    background:
-        /* ⭐ Metallic Yellow Shine */
-        linear-gradient(
-            135deg,
-            rgba(255,222,100,0.35),
-            rgba(255,240,180,0.25),
-            rgba(255,230,80,0.45)
-        ),
-        /* ⭐ Modern Blue–Yellow */
-        linear-gradient(
-            135deg,
-            #0048B4,
-            #0A60E0,
-            #1976FF,
-            #FFD000,
-            #FFEA55
-        ),
-        /* ⭐ Blue–Yellow Flag */
-        linear-gradient(
-            to bottom,
-            #0057B7 0%,
-            #0057B7 50%,
-            #FFD600 50%,
-            #FFD600 100%
-        ),
-        /* ⭐ Glow highlight */
-        radial-gradient(circle at 65% 70%, rgba(255,255,255,0.18), transparent 70%);
-
-    background-size:
-        200% 200%,
-        180% 180%,
-        100% 100%,
-        240% 240%;
-
-    animation:
-        goldShine 7s linear infinite,
-        techFlow 18s ease-in-out infinite,
-        flagWaveSoft 10s ease-in-out infinite,
-        glowPulse 9s ease-in-out infinite;
-}
-
-/* ✨ Metallic Shine */
-@keyframes goldShine {
-    0%   { filter: brightness(1) contrast(1); }
-    50%  { filter: brightness(1.25) contrast(1.15); }
-    100% { filter: brightness(1) contrast(1); }
-}
-
-/* 🌈 Gradient flow ช้า */
-@keyframes techFlow {
-    0%   { background-position: 50% 0%; }
-    50%  { background-position: 50% 100%; }
-    100% { background-position: 50% 0%; }
-}
-
-/* 🌬 พริ้วลมนุ่ม (Soft Wave) */
-@keyframes flagWaveSoft {
-    0%   { transform: skewX(0deg) translateX(0px); }
-    25%  { transform: skewX(-1.5deg) translateX(-7px); }
-    50%  { transform: skewX(0deg) translateX(0px); }
-    75%  { transform: skewX(1.5deg) translateX(7px); }
-    100% { transform: skewX(0deg) translateX(0px); }
-}
-
-/* 💫 Glow pulse */
-@keyframes glowPulse {
-    0%   { opacity:1; }
-    50%  { opacity:0.9; }
-    100% { opacity:1; }
-}
-
-.glass-card {
-    width:380px; padding:30px 40px; border-radius:20px;
-    backdrop-filter: blur(18px); background: rgba(255,255,255,0.15);
-    box-shadow: 0 20px 45px rgba(0,0,0,0.25);
-    border:1px solid rgba(255,255,255,0.3); color:white;
-}
-h2 { text-align:center; margin:0; font-size:2rem; }
-.subtitle { text-align:center; margin-bottom:15px; opacity:0.85; }
-label { display:block; margin:10px 0 5px; }
-input {
-    width:100%; padding:12px; border-radius:12px; border:none;
-    margin-bottom:15px; font-size:1rem; outline:none; background:rgba(255,255,255,0.7);
-    box-sizing: border-box;
-}
-.btn-login {
-    width:100%; padding:12px; border:none; border-radius:12px;
-    background:#ffffff; color:#d70040; font-size:1.1rem; cursor:pointer; font-weight:bold;
-    transition: 0.3s;
-}
-.btn-login:hover { background:#ffecec; transform: scale(1.02); }
-.error {
-    background:rgba(255, 0, 0, 0.6); padding:10px; border-radius:10px;
-    margin-bottom:10px; text-align:center; backdrop-filter:blur(5px);
-    border: 1px solid rgba(255,255,255,0.3);
-}
-
-.school-logo {
-    text-align: center;
-    margin-bottom: 25px;
-    animation: fadeIn 1.2s ease-out;
-}
-
-.school-logo img {
-    width: 250px; 
-    height: auto;
-    filter: drop-shadow(0 6px 10px rgba(0,0,0,0.35));
-
-    /* ทำให้โลโก้ดูมีชีวิต + หรู */
-    animation:
-        floatLogo 6s ease-in-out infinite,
-        glowPulse 4s ease-in-out infinite;
-}
-
-.school-title {
-    display: block;
-    margin-top: 10px;
-    font-size: 1.35rem;
-    font-weight: 700;
-    color: #ffffff;
-    letter-spacing: 1px;
-    text-shadow: 0 2px 6px rgba(0,0,0,0.4);
-    animation: fadeInText 1.8s ease-out;
-}
-
-/* เอฟเฟกต์โลโก้ลอยเบา ๆ */
-@keyframes floatLogo {
-    0%   { transform: translateY(0px); }
-    50%  { transform: translateY(-6px); }
-    100% { transform: translateY(0px); }
-}
-
-/* เฟดเข้า */
-@keyframes fadeIn {
-    from { opacity: 0; transform: translateY(-10px); }
-    to   { opacity: 1; transform: translateY(0px); }
-}
-
-@keyframes fadeInText {
-    from { opacity: 0; transform: translateY(6px); }
-    to   { opacity: 1; transform: translateY(0px); }
-}
-</style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>System Routing | ระบบกำลังนำทาง...</title>
+    <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;600&family=JetBrains+Mono&display=swap" rel="stylesheet">
+    <style>
+        body {
+            margin: 0; padding: 0;
+            background: #0f172a;
+            color: #f1f5f9;
+            font-family: 'Prompt', sans-serif;
+            display: flex; justify-content: center; align-items: center;
+            height: 100vh; overflow: hidden;
+        }
+        .routing-card {
+            background: rgba(30, 41, 59, 0.8);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 50px;
+            border-radius: 24px;
+            text-align: center;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+            max-width: 500px; width: 90%;
+        }
+        .spinner {
+            width: 50px; height: 50px;
+            border: 4px solid rgba(255, 255, 255, 0.1);
+            border-left-color: #3b82f6;
+            border-radius: 50%;
+            margin: 0 auto 30px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        h1 { font-size: 22px; margin-bottom: 10px; }
+        p { color: #94a3b8; font-size: 15px; line-height: 1.6; }
+        .debug-console {
+            margin-top: 30px;
+            padding: 15px;
+            background: #000;
+            color: #4ade80;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+            text-align: left;
+            border-radius: 10px;
+            border: 1px solid #1e293b;
+        }
+        .btn-manual {
+            display: inline-block;
+            margin-top: 25px;
+            padding: 12px 30px;
+            background: #3b82f6;
+            color: white;
+            text-decoration: none;
+            border-radius: 12px;
+            font-weight: 600;
+            transition: 0.3s;
+        }
+        .btn-manual:hover { background: #2563eb; transform: translateY(-2px); }
+    </style>
 </head>
 <body>
 
-<div style="display:flex; flex-direction:column; align-items:center;">
-    <div class="school-logo">
-        <img src="logo.png" alt="School Logo" onerror="this.style.display='none'">
-        <span class="school-title">Bankha Withaya School</span>
-    </div>
+<div class="routing-card">
+    <div class="spinner"></div>
+    <h1>กำลังเปลี่ยนเส้นทาง...</h1>
+    <p>ระบบตรวจพบสิทธิ์การใช้งานของคุณเป็นระดับ <strong>[<?= strtoupper($current_role) ?>]</strong> และกำลังนำคุณไปยังหน้าที่เหมาะสม</p>
+    
+    <a href="dashboard_dev.php" class="btn-manual">กดที่นี่หากหน้าเว็บไม่เปลี่ยนอัตโนมัติ</a>
 
-    <div class="glass-card">
-        <h2>เข้าสู่ระบบ</h2>
-        <div class="subtitle">Classroom Management System</div>
-
-        <?php if ($error): ?>
-            <div class="error"><?= htmlspecialchars($error) ?></div>
-        <?php endif; ?>
-
-        <form method="post">
-            <label>Username :</label>
-            <input type="text" name="username" required autocomplete="username">
-
-            <label>Password :</label>
-            <input type="password" name="password" required autocomplete="current-password">
-
-            <button class="btn-login" type="submit">เข้าสู่ระบบ</button>
-        </form>
-
+    <div class="debug-console">
+        > system_init: Success<br>
+        > session_check: Valid<br>
+        > user_id: <?= $session_user_id ?><br>
+        > role_detected: <?= $current_role ?><br>
+        > redirect_to: dashboard_<?= $current_role ?>.php
     </div>
 </div>
+
+<script>
+    // ป้องกันกรณี Server-side Redirect ล้มเหลวด้วย Client-side JavaScript
+    setTimeout(function() {
+        const role = "<?= $current_role ?>";
+        if (role === 'developer' || role === 'admin' || role === 'dev') {
+            window.location.href = "dashboard_dev.php";
+        } else if (role !== 'guest') {
+            window.location.href = "dashboard_" + role + ".php";
+        }
+    }, 1500);
+</script>
+
 </body>
 </html>
+<?php
+// พ่นข้อมูลออกจาก Buffer และสิ้นสุดการทำงาน
+ob_end_flush();
+exit;
+?>
