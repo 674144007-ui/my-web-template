@@ -68,6 +68,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $stmt->fetch();
                 if (password_verify($password, $db_pass)) {
                     
+                    // 🔴 FIX: ป้องกันช่องโหว่ Session Fixation Attack
+                    session_regenerate_id(true);
+                    
                     // 🔥 AUTO-FIX: ถ้าใน Database เป็น admin ให้เปลี่ยนเป็น developer ทันที
                     if ($db_role === 'admin') {
                         $db_role = 'developer';

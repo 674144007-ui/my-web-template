@@ -18,13 +18,34 @@ if (isset($_POST['action']) && $_POST['action'] == 'reset_password') {
     $msg_type = "success";
 }
 
-// --- Action: Delete ---
-if (isset($_GET['delete'])) {
-    $del_id = intval($_GET['delete']);
+// 🔴 FIX: เปลี่ยนการลบจาก GET เป็น POST (ป้องกัน CSRF) และเคลียร์ Foreign Key ทิ้งก่อนลบ
+if (isset($_POST['action']) && $_POST['action'] == 'delete_user') {
+    $del_id = intval($_POST['user_id']);
     if ($del_id != $_SESSION['user_id']) {
-        $conn->query("DELETE FROM users WHERE id=$del_id");
-        $msg = "🗑️ ลบผู้ใช้เรียบร้อย";
-        $msg_type = "success";
+        try {
+            // ลบข้อมูลที่ผูกอยู่กับ User คนนี้ออกก่อน (Manual Cascade)
+            $conn->query("DELETE FROM attendance WHERE student_id = $del_id");
+            $conn->query("DELETE FROM assigned_work WHERE teacher_id = $del_id OR student_id = $del_id");
+            $conn->query("DELETE FROM assignment_library WHERE teacher_id = $del_id");
+            $conn->query("DELETE FROM teacher_files WHERE teacher_id = $del_id");
+            $conn->query("DELETE FROM teacher_schedule WHERE teacher_id = $del_id OR created_by = $del_id");
+            $conn->query("DELETE FROM messages WHERE sender_id = $del_id OR receiver_id = $del_id");
+            $conn->query("DELETE FROM student_quest_progress WHERE student_id = $del_id");
+            $conn->query("DELETE FROM student_history WHERE user_id = $del_id");
+            $conn->query("DELETE FROM student_qr WHERE student_id = $del_id");
+            $conn->query("DELETE FROM friends WHERE user_id_1 = $del_id OR user_id_2 = $del_id");
+            $conn->query("DELETE FROM login_logs WHERE user_id = $del_id");
+            $conn->query("DELETE FROM results WHERE user_id = $del_id");
+            
+            // ลบ User
+            $conn->query("DELETE FROM users WHERE id=$del_id");
+            
+            $msg = "🗑️ ลบผู้ใช้และข้อมูลที่เกี่ยวข้องเรียบร้อย";
+            $msg_type = "success";
+        } catch (Exception $e) {
+            $msg = "❌ ไม่สามารถลบผู้ใช้นี้ได้: " . $e->getMessage();
+            $msg_type = "error";
+        }
     }
 }
 
@@ -83,7 +104,8 @@ $result = $conn->query($sql);
     .btn-edit:hover { background: #2563eb; }
     .btn-reset { background: #f59e0b; color: white; padding: 5px 10px; font-size: 0.8rem; margin-right: 2px; }
     .btn-reset:hover { background: #d97706; }
-    .btn-del { background: #ef4444; color: white; padding: 5px 10px; font-size: 0.8rem; }
+    .btn-del { background: #ef4444; color: white; padding: 5px 10px; font-size: 0.8rem; border:none; cursor:pointer;}
+    .btn-del:hover { background: #dc2626; }
     
     table { width: 100%; border-collapse: collapse; margin-top: 10px; }
     th, td { padding: 12px 15px; text-align: left; border-bottom: 1px solid #e2e8f0; }
@@ -97,6 +119,7 @@ $result = $conn->query($sql);
     
     .alert { padding: 10px; margin-bottom: 15px; border-radius: 6px; text-align: center; }
     .success { background: #dcfce7; color: #166534; }
+    .error { background: #fee2e2; color: #991b1b; }
 </style>
 </head>
 <body>
@@ -196,7 +219,11 @@ $result = $conn->query($sql);
                         </form>
                         
                         <?php if($row['id'] != $_SESSION['user_id']): ?>
-                            <a href="?delete=<?= $row['id'] ?>" class="btn btn-del" onclick="return confirm('ลบผู้ใช้นี้?');" title="ลบผู้ใช้">🗑️</a>
+                            <form method="post" style="display:inline;" onsubmit="return confirm('⚠️ ยืนยันการลบผู้ใช้นี้ใช่หรือไม่?\nข้อมูลการส่งงาน แชท และประวัติทั้งหมดจะถูกลบถาวร!');">
+                                <input type="hidden" name="action" value="delete_user">
+                                <input type="hidden" name="user_id" value="<?= $row['id'] ?>">
+                                <button type="submit" class="btn btn-del" title="ลบผู้ใช้">🗑️</button>
+                            </form>
                         <?php endif; ?>
                     </td>
                 </tr>

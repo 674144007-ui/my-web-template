@@ -12,7 +12,8 @@ if (session_status() === PHP_SESSION_NONE) {
         'path' => '/',
         'domain' => '',
         'secure' => false, // เปลี่ยนเป็น true ถ้าใช้ HTTPS
-        'httponly' => true
+        'httponly' => true,
+        'samesite' => 'Lax' // ป้องกัน CSRF ระดับหนึ่ง
     ]);
     session_start();
 }
@@ -35,19 +36,23 @@ function isLoggedIn() {
 }
 
 /**
- * ตรวจสอบสถานะและอัปเดตเวลาล่าสุด
+ * ตรวจสอบสถานะและอัปเดตเวลาล่าสุด (FIX: ป้องกันคอขวดโดยอัปเดตทุกๆ 5 นาทีแทนการอัปเดตทุกรีเฟรช)
  */
 function checkLoginStatus() {
     global $conn;
     if (isLoggedIn()) {
         $uid = intval($_SESSION['user_id']);
-        // ใช้ try-catch ป้องกัน SQL Error ถล่มหน้าเว็บ
-        try {
-            if ($conn) {
-                $conn->query("UPDATE users SET last_activity = NOW() WHERE id = $uid");
+        
+        // หน่วงเวลาการอัปเดต Last Activity (300 วินาที = 5 นาที) เพื่อลดภาระ Database
+        if (!isset($_SESSION['last_activity_update']) || (time() - $_SESSION['last_activity_update']) > 300) {
+            try {
+                if ($conn) {
+                    $conn->query("UPDATE users SET last_activity = NOW() WHERE id = $uid");
+                    $_SESSION['last_activity_update'] = time();
+                }
+            } catch (Exception $e) {
+                // เงียบไว้ ไม่ต้องพ่น Error ออกมา
             }
-        } catch (Exception $e) {
-            // เงียบไว้ ไม่ต้องพ่น Error ออกมา
         }
         return true;
     }
@@ -106,3 +111,4 @@ function currentUser() {
         'class_level'   => $_SESSION['class_level'] ?? ''
     ];
 }
+?>

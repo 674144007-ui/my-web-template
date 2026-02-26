@@ -86,7 +86,8 @@ button { padding:10px 20px; border-radius:20px; border:none; background:#3b82f6;
 const tid = <?= $target_id ?>;
 const mid = <?= $my_id ?>;
 if(tid > 0) {
-    setInterval(loadMsgs, 2000);
+    // 🔴 FIX: เพิ่มเวลาหน่วง (Polling) เป็น 5 วินาที ลดภาระเซิร์ฟเวอร์ร่วง
+    setInterval(loadMsgs, 5000);
     loadMsgs();
 }
 
@@ -94,12 +95,26 @@ function loadMsgs() {
     fetch(`social_api.php?action=get_messages&partner_id=${tid}`)
     .then(r=>r.json()).then(d=>{
         const box = document.getElementById('msgBox');
-        box.innerHTML = '';
+        box.innerHTML = ''; // Clear ก่อนเพิ่มใหม่
         d.forEach(m => {
-            let h = `<div class="msg ${m.sender_id==mid?'me':'them'}">${m.message}`;
-            if(m.file_path) h += `<a href="uploads/${m.file_path}" target="_blank" class="file-link">📎 ${m.file_name}</a>`;
-            h += `</div>`;
-            box.innerHTML += h;
+            // 🔴 FIX: อุดช่องโหว่ XSS (Cross-Site Scripting) 
+            // โดยการสร้าง Element และใช้ textContent แทนการนำไปต่อ String
+            const msgDiv = document.createElement('div');
+            msgDiv.className = `msg ${m.sender_id == mid ? 'me' : 'them'}`;
+            msgDiv.textContent = m.message; // ป้องกัน Script ทำงาน
+            
+            if(m.file_path) {
+                const a = document.createElement('a');
+                a.href = `uploads/${m.file_path}`;
+                a.target = '_blank';
+                a.className = 'file-link';
+                a.textContent = `📎 ${m.file_name}`;
+                
+                msgDiv.appendChild(document.createElement('br'));
+                msgDiv.appendChild(a);
+            }
+            
+            box.appendChild(msgDiv);
         });
     });
 }

@@ -3,14 +3,14 @@
 // ตรวจสอบสิทธิ์ผู้ใช้ อนุญาตให้ Developer, Student และ Teacher เข้าใช้งานได้
 require_once 'auth.php';
 require_once 'db.php'; // ดึงการเชื่อมต่อฐานข้อมูล
-requireRole(['developer', 'student', 'teacher']); 
+requireRole(['developer', 'student', 'teacher', 'admin', 'parent']); 
 
 // ==========================================
 // ส่วนของการดึงข้อมูลเควสต์ (ภารกิจ) สำหรับผู้ใช้คนนี้
 // ==========================================
 $user = currentUser();
 $class_level = $user['class_level'] ?? '';
-$user_id = $user['id'];
+$user_id = $user['id'] ?? 0;
 
 $quests = [];
 if (!empty($class_level)) {
@@ -22,26 +22,32 @@ if (!empty($class_level)) {
         WHERE q.assigned_class = ? 
         ORDER BY q.created_at DESC
     ");
-    $stmt->bind_param("s", $class_level);
-    $stmt->execute();
-    $quests_result = $stmt->get_result();
-    
-    while ($row = $quests_result->fetch_assoc()) {
-        $q_id = $row['id'];
+    if ($stmt) {
+        $stmt->bind_param("s", $class_level);
+        $stmt->execute();
+        $quests_result = $stmt->get_result();
         
-        // เช็คสถานะความคืบหน้าของนักเรียนคนนี้กับเควสต์นั้นๆ
-        $stmt_prog = $conn->prepare("SELECT status FROM student_quest_progress WHERE student_id = ? AND quest_id = ?");
-        $stmt_prog->bind_param("ii", $user_id, $q_id);
-        $stmt_prog->execute();
-        $prog_res = $stmt_prog->get_result();
-        
-        if ($prog_res->num_rows > 0) {
-            $prog_row = $prog_res->fetch_assoc();
-            $row['status'] = $prog_row['status'];
-        } else {
-            $row['status'] = 'pending';
+        while ($row = $quests_result->fetch_assoc()) {
+            $q_id = $row['id'];
+            
+            // เช็คสถานะความคืบหน้าของนักเรียนคนนี้กับเควสต์นั้นๆ
+            $stmt_prog = $conn->prepare("SELECT status FROM student_quest_progress WHERE student_id = ? AND quest_id = ?");
+            if ($stmt_prog) {
+                $stmt_prog->bind_param("ii", $user_id, $q_id);
+                $stmt_prog->execute();
+                $prog_res = $stmt_prog->get_result();
+                
+                if ($prog_res->num_rows > 0) {
+                    $prog_row = $prog_res->fetch_assoc();
+                    $row['status'] = $prog_row['status'];
+                } else {
+                    $row['status'] = 'pending';
+                }
+                $stmt_prog->close();
+            }
+            $quests[] = $row;
         }
-        $quests[] = $row;
+        $stmt->close();
     }
 }
 ?>
@@ -66,7 +72,6 @@ if (!empty($class_level)) {
             margin: 0; 
             padding: 0; 
             min-height: 100vh;
-            /* ตรวจสอบว่ามีไฟล์ images_bg.png อยู่จริง ไม่งั้นจะขึ้น 404 */
             background-image: url('images_bg.png'); 
             background-color: #f0f4f8; 
             background-size: cover;
@@ -76,12 +81,12 @@ if (!empty($class_level)) {
             justify-content: center;
             align-items: flex-start;
             padding-top: 50px;
-            overflow-x: hidden; /* ป้องกัน Scrollbar แนวนอน */
+            overflow-x: hidden; 
         }
 
         .container {
             width: 90%; 
-            max-width: 850px; /* ขยายความกว้างเล็กน้อย */
+            max-width: 850px; 
             background: rgba(255, 255, 255, 0.95);
             padding: 25px; 
             border-radius: 16px;
@@ -89,6 +94,7 @@ if (!empty($class_level)) {
             position: relative; 
             z-index: 10;
             backdrop-filter: blur(5px);
+            margin-bottom: 50px;
         }
 
         h2 { 
@@ -118,7 +124,6 @@ if (!empty($class_level)) {
             color:white; 
         }
 
-        /* ปรับปรุง Layout ส่วนควบคุมให้รองรับปุ่มตารางธาตุ */
         .control-group { 
             display: grid; 
             grid-template-columns: 1fr 1fr; 
@@ -136,10 +141,9 @@ if (!empty($class_level)) {
             align-items: stretch;
         }
         .ts-wrapper {
-            flex-grow: 1; /* ให้ Dropdown ขยายเต็มพื้นที่ที่เหลือ */
+            flex-grow: 1; 
         }
         
-        /* ปุ่มเปิดตารางธาตุ */
         .btn-periodic-trigger {
             background: #64748b;
             color: white; border: none; border-radius: 8px;
@@ -192,6 +196,7 @@ if (!empty($class_level)) {
             border-left: 5px solid #764ba2;
             font-size: 16px; 
             line-height: 1.6;
+            display: none;
         }
         .res-row { 
             display: flex; 
@@ -243,7 +248,6 @@ if (!empty($class_level)) {
         /* --- CSS Effect หน้าจอแตก/พิษ --- */
         #broken-overlay {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            /* ตรวจสอบว่า Link รูปภาพนี้ยังใช้งานได้ */
             background-image: url('https://upload.wikimedia.org/wikipedia/commons/thumb/4/4e/Broken_glass.png/800px-Broken_glass.png'); 
             background-size: cover; pointer-events: none; opacity: 0; transition: opacity 0.1s; z-index: 9999; mix-blend-mode: multiply;
         }
@@ -261,12 +265,10 @@ if (!empty($class_level)) {
         }
 
         /* =========================================
-           CSS สำหรับ Modal และ ตารางธาตุ (ใหม่)
+           CSS สำหรับ Modal และ ตารางธาตุ
            ========================================= */
-        
-        /* พื้นหลัง Modal (Overlay) */
         .periodic-modal-overlay {
-            display: none; /* ซ่อนโดยเริ่มต้น */
+            display: none; 
             position: fixed;
             top: 0; left: 0; width: 100%; height: 100%;
             background-color: rgba(0,0,0,0.8);
@@ -277,21 +279,17 @@ if (!empty($class_level)) {
             box-sizing: border-box;
             overflow: auto;
         }
-
-        /* กล่องเนื้อหา Modal */
         .periodic-modal-content {
-            background-color: #1a1a2e; /* สีพื้นหลังเข้ม */
+            background-color: #1a1a2e; 
             color: #e0e0e0;
             padding: 25px;
             border-radius: 12px;
             width: 100%;
-            max-width: 1200px; /* กว้างพิเศษสำหรับตาราง */
+            max-width: 1200px; 
             box-shadow: 0 20px 50px rgba(0,0,0,0.5);
             position: relative;
-            overflow-x: auto; /* ให้เลื่อนแนวนอนได้ถ้าจอเล็ก */
+            overflow-x: auto; 
         }
-
-        /* ปุ่มปิด Modal */
         .periodic-close-btn {
             position: absolute;
             top: 15px; right: 20px;
@@ -299,22 +297,17 @@ if (!empty($class_level)) {
             cursor: pointer; transition: 0.2s;
         }
         .periodic-close-btn:hover { color: #ff0000; }
-        
         .periodic-modal-title { text-align: center; margin-bottom: 20px; font-size: 24px; }
 
-        /* Grid Container ของตารางธาตุ */
         .periodic-grid {
             display: grid;
-            /* 18 คอลัมน์ตามหมู่ */
             grid-template-columns: repeat(18, minmax(50px, 1fr));
-            /* 7 คาบ + ช่องว่าง + 2 คาบ (Lanthanides/Actinides) */
             grid-template-rows: repeat(7, minmax(50px, auto)) 20px repeat(2, minmax(50px, auto));
             gap: 6px;
             padding: 10px;
             user-select: none;
         }
 
-        /* รูปแบบของช่องธาตุแต่ละช่อง */
         .element-cell {
             border: 1px solid rgba(255,255,255,0.2);
             border-radius: 6px;
@@ -325,11 +318,10 @@ if (!empty($class_level)) {
             align-items: center;
             cursor: pointer;
             transition: transform 0.1s, box-shadow 0.1s, background-color 0.2s;
-            aspect-ratio: 1 / 1; /* ให้เป็นสี่เหลี่ยมจัตุรัส */
+            aspect-ratio: 1 / 1; 
             position: relative;
-            background-color: #333; /* สีพื้นฐาน */
+            background-color: #333; 
         }
-
         .element-cell:hover {
             transform: scale(1.15);
             z-index: 10;
@@ -337,15 +329,11 @@ if (!empty($class_level)) {
             border-color: white;
         }
 
-        /* ข้อความในช่องธาตุ */
         .atom-num { font-size: 10px; position: absolute; top: 2px; left: 4px; opacity: 0.7; }
         .atom-sym { font-size: 18px; font-weight: bold; }
         .atom-name { font-size: 9px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; opacity: 0.9;}
-
-        /* Placeholder สำหรับช่องว่างในตาราง */
         .empty-cell { pointer-events: none; }
 
-        /* สีตามกลุ่มธาตุ */
         .cat-alkali { background-color: #ff6666; color: black; }
         .cat-alkaline-earth { background-color: #ffdead; color: black; }
         .cat-transition { background-color: #87ceeb; color: black; }
@@ -356,16 +344,11 @@ if (!empty($class_level)) {
         .cat-noble-gas { background-color: #e6e6fa; color: black; }
         .cat-lanthanide { background-color: #ffb6c1; color: black; }
         .cat-actinide { background-color: #d8bfd8; color: black; }
-    </style>
-
-    <script type="importmap">
-    {
-        "imports": {
-            "three": "https://esm.sh/three@0.150.1",
-            "three/addons/OrbitControls.js": "https://esm.sh/three@0.150.1/examples/jsm/controls/OrbitControls.js"
+        
+        @media (max-width: 1100px) {
+            .quest-panel, .status-panel { display: none; }
         }
-    }
-    </script>
+    </style>
 </head>
 <body>
 
@@ -435,7 +418,11 @@ if (!empty($class_level)) {
 
     <button id="mix-button">⚗️ ผสมสารเคมี (Mix It!)</button>
 
-    <div id="viewer3d"></div>
+    <div id="viewer3d">
+        <div id="viewer3d-fallback" style="text-align:center; padding-top: 180px; color: #94a3b8;">
+            กำลังโหลดโมเดล 3D...
+        </div>
+    </div>
 
     <div id="result-box">
         <div class="res-row"><span>📦 ผลิตภัณฑ์:</span> <span id="res-product" class="res-val">-</span></div>
@@ -463,28 +450,34 @@ if (!empty($class_level)) {
     </div>
 </div>
 
-
 <script src="https://cdn.jsdelivr.net/npm/tom-select@2.2.2/dist/js/tom-select.complete.min.js"></script>
 
 <script type="module">
-    // Import Module 3D Engine
-    // หากไฟล์นี้ไม่มีอยู่จริง จะเกิด error 404
-    import { init3DScene, updateLiquidVisuals } from './js/3d_engine.js';
+    try {
+        const engine = await import('./js/3d_engine.js');
+        window.hookInit3D = engine.init3DScene;
+        window.hookUpdateVisuals = engine.updateLiquidVisuals;
+        
+        const container = document.getElementById('viewer3d');
+        if (container && window.hookInit3D) {
+            window.hookInit3D(container);
+            const fallback = document.getElementById('viewer3d-fallback');
+            if(fallback) fallback.style.display = 'none';
+        }
+    } catch(e) {
+        console.warn("⚠️ ไม่สามารถโหลด 3D Engine ได้ ระบบจะทำงานในโหมด 2D", e);
+        const fallback = document.getElementById('viewer3d-fallback');
+        if(fallback) fallback.innerHTML = "โหมดแสดงผล 2D (ไม่พบไฟล์ 3D)";
+    }
+</script>
 
-    // ตัวแปร Global สำหรับเก็บ instance ของ TomSelect
+<script type="text/javascript">
     let tomA, tomB;
-    // ตัวแปรสถานะเกม
     let hp = 100;
     let beakerHp = 100;
-    // ตัวแปรเก็บว่ากำลังเลือกธาตุให้ input ไหน ('A' หรือ 'B')
     let currentTargetInput = null;
 
-    // ทำงานเมื่อโหลดหน้าเว็บเสร็จ
     document.addEventListener('DOMContentLoaded', () => {
-        // เริ่มต้นระบบ 3D
-        const container = document.getElementById('viewer3d');
-        if (container) init3DScene(container);
-
         // โหลดข้อมูลสารเคมีและสร้าง Dropdown
         loadChemicalsAndInitTomSelect();
 
@@ -496,51 +489,45 @@ if (!empty($class_level)) {
         renderPeriodicTable();
     });
     
-    // ฟังก์ชันโหลดข้อมูลสารเคมีจาก Server และตั้งค่า TomSelect
     async function loadChemicalsAndInitTomSelect() {
         try {
-            // หากไฟล์นี้ไม่มีอยู่จริง หรือ DB เชื่อมไม่ได้ จะเกิด error
-            const response = await fetch('get_chemicals.php');
-            const data = await response.json();
+            // 🔴 FIX 3: ดึงข้อมูลผ่าน mix.php API ที่ปลอดภัยกว่า get_chemicals.php เปล่าๆ
+            const response = await fetch('mix.php?action=get_chemicals');
+            const responseText = await response.text();
+            const data = JSON.parse(responseText);
             
-            if (!Array.isArray(data)) throw new Error("Invalid Data format from get_chemicals.php");
+            if (!Array.isArray(data)) throw new Error("Invalid Data format from API");
 
-            // การตั้งค่า TomSelect
             const config = {
-                valueField: 'value', // ค่าที่จะส่งไป (ID)
-                labelField: 'text',  // ค่าที่จะแสดง (ชื่อ)
-                searchField: 'text', // ค่าที่จะใช้ค้นหา
-                options: data,       // ข้อมูลที่โหลดมา
+                valueField: 'value',
+                labelField: 'text', 
+                searchField: 'text',
+                options: data,      
                 maxOptions: 200,
                 placeholder: 'พิมพ์เพื่อค้นหา...',
-                dropdownParent: 'body', // ให้ Dropdown ไปติดกับ body เพื่อแก้ปัญหา z-index
+                dropdownParent: 'body',
                 render: {
-                    // ปรับแต่งการแสดงผลในรายการ
                     option: function(data, escape) {
-                        return '<div style="padding: 5px;">' + escape(data.text) + '</div>';
+                        return '<div style="padding: 8px; border-bottom: 1px solid #f1f5f9;">' + escape(data.text) + '</div>';
                     },
-                    // ข้อความเมื่อหาไม่เจอ
                     no_results: function(data, escape) {
-                        return '<div class="no-results" style="padding: 5px; color: #999;">ไม่พบข้อมูล</div>';
+                        return '<div class="no-results" style="padding: 10px; color: #ef4444;">ไม่พบข้อมูลสารเคมีนี้</div>';
                     }
                 }
             };
 
-            // สร้าง instance ของ TomSelect และเก็บไว้ในตัวแปร global
             tomA = new TomSelect("#chemicalA", config);
             tomB = new TomSelect("#chemicalB", config);
 
         } catch (error) {
             console.error("Failed to load chemicals:", error);
-            alert("⚠️ ไม่สามารถโหลดรายการสารเคมีได้ (ตรวจสอบ Database Connection หรือไฟล์ get_chemicals.php)");
+            alert("⚠️ ไม่สามารถโหลดรายการสารเคมีได้ กรุณาตรวจสอบการเชื่อมต่อฐานข้อมูล");
         }
     }
 
     // =========================================
-    // ฟังก์ชันจัดการตารางธาตุ (Javascript)
+    // ฟังก์ชันจัดการตารางธาตุ
     // =========================================
-
-    // ข้อมูลตารางธาตุ 118 ธาตุ (Hardcoded Data)
     const periodicTableData = [
         { num: 1, sym: 'H', name: 'Hydrogen', group: 1, period: 1, cat: 'nonmetal' },
         { num: 2, sym: 'He', name: 'Helium', group: 18, period: 1, cat: 'noble-gas' },
@@ -599,7 +586,7 @@ if (!empty($class_level)) {
         { num: 55, sym: 'Cs', name: 'Cesium', group: 1, period: 6, cat: 'alkali' },
         { num: 56, sym: 'Ba', name: 'Barium', group: 2, period: 6, cat: 'alkaline-earth' },
         { num: 57, sym: 'La', name: 'Lanthanum', group: 3, period: 6, cat: 'lanthanide' },
-        { num: 58, sym: 'Ce', name: 'Cerium', group: 3, period: 9, cat: 'lanthanide' }, /* Period 9 for display row 1 */
+        { num: 58, sym: 'Ce', name: 'Cerium', group: 3, period: 9, cat: 'lanthanide' },
         { num: 59, sym: 'Pr', name: 'Praseodymium', group: 4, period: 9, cat: 'lanthanide' },
         { num: 60, sym: 'Nd', name: 'Neodymium', group: 5, period: 9, cat: 'lanthanide' },
         { num: 61, sym: 'Pm', name: 'Promethium', group: 6, period: 9, cat: 'lanthanide' },
@@ -631,7 +618,7 @@ if (!empty($class_level)) {
         { num: 87, sym: 'Fr', name: 'Francium', group: 1, period: 7, cat: 'alkali' },
         { num: 88, sym: 'Ra', name: 'Radium', group: 2, period: 7, cat: 'alkaline-earth' },
         { num: 89, sym: 'Ac', name: 'Actinium', group: 3, period: 7, cat: 'actinide' },
-        { num: 90, sym: 'Th', name: 'Thorium', group: 3, period: 10, cat: 'actinide' }, /* Period 10 for display row 2 */
+        { num: 90, sym: 'Th', name: 'Thorium', group: 3, period: 10, cat: 'actinide' }, 
         { num: 91, sym: 'Pa', name: 'Protactinium', group: 4, period: 10, cat: 'actinide' },
         { num: 92, sym: 'U', name: 'Uranium', group: 5, period: 10, cat: 'actinide' },
         { num: 93, sym: 'Np', name: 'Neptunium', group: 6, period: 10, cat: 'actinide' },
@@ -662,20 +649,13 @@ if (!empty($class_level)) {
         { num: 118, sym: 'Og', name: 'Oganesson', group: 18, period: 7, cat: 'noble-gas' }
     ];
 
-    // ฟังก์ชันสร้าง HTML ของตารางธาตุและใส่ลงใน Modal
     function renderPeriodicTable() {
         const gridContainer = document.getElementById('periodicGridContainer');
         if (!gridContainer) return;
 
-        // สร้าง Map เพื่อเข้าถึงข้อมูลธาตุตามเลขอะตอมได้ง่าย
-        const elementMap = new Map(periodicTableData.map(el => [el.num, el]));
-
-        // วนลูปสร้าง Grid 10 แถว x 18 คอลัมน์
         for (let row = 1; row <= 10; row++) {
             for (let col = 1; col <= 18; col++) {
                 let element = null;
-
-                // ค้นหาธาตุที่อยู่ตรงกับ row/col นี้
                 for (const el of periodicTableData) {
                     if (el.period === row && el.group === col) {
                         element = el;
@@ -685,22 +665,16 @@ if (!empty($class_level)) {
 
                 const cell = document.createElement('div');
                 if (element) {
-                    // ถ้ามีธาตุในตำแหน่งนี้ ให้สร้างเซลล์แสดงข้อมูล
                     cell.className = `element-cell cat-${element.cat}`;
                     cell.innerHTML = `
                         <span class="atom-num">${element.num}</span>
                         <span class="atom-sym">${element.sym}</span>
                         <span class="atom-name">${element.name}</span>
                     `;
-                    // กำหนดตำแหน่ง Grid
                     cell.style.gridRow = row;
                     cell.style.gridColumn = col;
-
-                    // เพิ่ม Event Listener เมื่อคลิกที่ธาตุ
                     cell.addEventListener('click', () => selectElementFromTable(element.name));
-
                 } else {
-                    // ถ้าไม่มีธาตุ ให้เป็นเซลล์ว่าง
                     cell.className = 'empty-cell';
                     cell.style.gridRow = row;
                     cell.style.gridColumn = col;
@@ -710,71 +684,52 @@ if (!empty($class_level)) {
         }
     }
 
-    // 🔥🔥🔥 จุดแก้ไขสำคัญ: ทำให้ฟังก์ชันเหล่านี้เป็น Global เพื่อให้ HTML มองเห็น 🔥🔥🔥
-    // โดยการเอาไปผูกกับ object 'window'
-    
-    // ฟังก์ชันเปิด Modal ตารางธาตุ (ถูกเรียกจากปุ่มใน HTML)
+    // Global Functions สำหรับ Modal
     window.openPeriodicTable = function(target) {
-        currentTargetInput = target; // บันทึกไว้ว่ากำลังเลือกให้ input ไหน ('A' หรือ 'B')
+        currentTargetInput = target; 
         const modal = document.getElementById('periodicModal');
-        if (modal) {
-            modal.style.display = 'flex'; // แสดง Modal
-        }
+        if (modal) modal.style.display = 'flex'; 
     }
 
-    // ฟังก์ชันปิด Modal ตารางธาตุ (ถูกเรียกจากปุ่มปิด หรือเมื่อเลือกเสร็จ)
     window.closePeriodicTable = function() {
-        currentTargetInput = null; // รีเซ็ตเป้าหมาย
+        currentTargetInput = null; 
         const modal = document.getElementById('periodicModal');
-        if (modal) {
-            modal.style.display = 'none'; // ซ่อน Modal
-        }
+        if (modal) modal.style.display = 'none'; 
     }
-    // 🔥🔥🔥 สิ้นสุดจุดแก้ไขสำคัญ 🔥🔥🔥
 
-
-    // ปิด Modal เมื่อคลิกพื้นที่ว่างๆ นอกกล่องเนื้อหา
     window.onclick = function(event) {
         const modal = document.getElementById('periodicModal');
-        if (event.target == modal) {
-            closePeriodicTable();
-        }
+        if (event.target == modal) closePeriodicTable();
     }
 
-    // ฟังก์ชันเมื่อผู้ใช้คลิกเลือกธาตุในตาราง
     function selectElementFromTable(elementName) {
         if (!currentTargetInput) return;
-
-        // เลือก instance ของ TomSelect ที่ถูกต้องตามเป้าหมาย ('A' หรือ 'B')
         const targetTom = (currentTargetInput === 'A') ? tomA : tomB;
-        
-        // ค้นหา ID ของธาตุจากชื่อภาษาอังกฤษในตัวเลือกของ TomSelect
         let foundId = null;
-        // วนลูปตรวจสอบตัวเลือกทั้งหมดที่มีใน Dropdown
         for (const [id, optionData] of Object.entries(targetTom.options)) {
-             // เปรียบเทียบชื่อธาตุ (แบบไม่สนตัวพิมพ์เล็ก-ใหญ่) กับข้อความใน Dropdown
             if (optionData.text.toLowerCase().includes(elementName.toLowerCase())) {
-                foundId = id; // เจอแล้ว เก็บ ID ไว้
+                foundId = id; 
                 break;
             }
         }
 
         if (foundId) {
-            // ถ้าเจอ ID ที่ตรงกัน ให้ตั้งค่าใน TomSelect
             targetTom.setValue(foundId);
-            // ปิด Modal
             closePeriodicTable();
         } else {
-            // ถ้าหาไม่เจอ แจ้งเตือนผู้ใช้
-            alert(`⚠️ ไม่พบธาตุ "${elementName}" ในฐานข้อมูลของคุณ\n(ชื่อในฐานข้อมูลต้องตรงกับชื่อภาษาอังกฤษของธาตุ)`);
+            alert(`⚠️ ไม่พบธาตุ "${elementName}" ในฐานข้อมูลของคุณ`);
         }
     }
 
-
     // =========================================
-    // ฟังก์ชันหลักในการผสมสาร (เดิม)
+    // ฟังก์ชันหลักในการผสมสาร (แก้ไขการส่ง API)
     // =========================================
     async function handleMix() {
+        if(hp <= 0 || beakerHp <= 0) {
+            alert("อุปกรณ์พัง หรือ คุณอยู่ในสภาพที่ไม่พร้อมทดลองแล้ว! กรุณากดปุ่ม 'รีเซ็ตแล็บ'");
+            return;
+        }
+
         const chemA = tomA.getValue();
         const chemB = tomB.getValue();
         const volA = document.getElementById('volA').value || 0;
@@ -790,20 +745,34 @@ if (!empty($class_level)) {
         btn.innerHTML = "⏳ กำลังทำปฏิกิริยา...";
 
         try {
-            // เรียก API mix.php (หากไฟล์นี้ไม่มีอยู่จริง จะเกิด error 404)
-            const url = `mix.php?a=${chemA}&b=${chemB}&volA=${volA}&volB=${volB}`;
+            // 🔴 FIX 1: เพิ่ม action=mix ใน URL เพื่อให้ API ใน mix.php ส่งค่ากลับมาถูกต้อง (และไม่ไปดึงหน้า HTML มา)
+            const url = `mix.php?action=mix&a=${chemA}&b=${chemB}&volA=${volA}&volB=${volB}`;
             const response = await fetch(url);
-            const data = await response.json();
+            
+            // อ่านค่าเป็นข้อความก่อนเผื่อเกิด Error จากฝั่ง PHP
+            const responseText = await response.text();
+            
+            let data;
+            try {
+                data = JSON.parse(responseText);
+            } catch (jsonErr) {
+                console.error("Not a valid JSON:", responseText);
+                throw new Error("ระบบประมวลผลหลังบ้านขัดข้อง กรุณาติดต่อ Developer");
+            }
 
             if (!data.success) {
                 throw new Error(data.error || "Unknown Error from server");
             }
 
-            // อัปเดต 3D และผลลัพธ์
-            updateLiquidVisuals(data);
-            updateResultBox(data);
+            // แสดงกล่องผลลัพธ์
+            document.getElementById('result-box').style.display = 'block';
 
-            // จัดการ Effect พิเศษ
+            // ถ้า 3D โหลดสำเร็จ ให้วาดภาพน้ำด้วย
+            if(typeof window.hookUpdateVisuals === 'function') {
+                window.hookUpdateVisuals(data);
+            }
+
+            updateResultBox(data);
             handleSpecialEffects(data);
 
         } catch (err) {
@@ -815,7 +784,6 @@ if (!empty($class_level)) {
         }
     }
 
-    // ฟังก์ชันอัปเดตกล่องข้อความผลลัพธ์
     function updateResultBox(data) {
         setText('res-product', data.product_name);
         setText('res-formula', data.product_formula || "-");
@@ -834,54 +802,56 @@ if (!empty($class_level)) {
         setText('res-volume', data.total_volume);
     }
 
-    // ฟังก์ชันจัดการ Effect ระเบิด/พิษ
     function handleSpecialEffects(data) {
         resetEffects();
         if (data.effect_type === 'explosion') {
             triggerExplosion();
-            updateBars(50, 50); // โดนดาเมจหนัก
+            updateBars(50, 50); 
         } else if (data.effect_type === 'toxic_gas') {
             triggerToxic();
-            updateBars(20, 5); // โดนพิษ
+            updateBars(20, 5); 
         } else if (data.damage_player > 0) {
-            // ดาเมจทั่วไปจากความเป็นพิษของสาร
             updateBars(data.damage_player, 0);
         }
     }
 
-    // Helper Functions
     function setText(id, text) { const el = document.getElementById(id); if (el) el.innerText = text; }
+    
     function translateState(state) {
         if(state === 'liquid') return 'ของเหลว (Liquid)';
         if(state === 'solid') return 'ของแข็ง (Solid)';
         if(state === 'gas') return 'ก๊าซ (Gas)';
         return state;
     }
+    
     function resetEffects() {
         document.getElementById('broken-overlay').style.opacity = 0;
         document.getElementById('toxic-overlay').style.opacity = 0;
         document.body.classList.remove('shake');
     }
+    
     function triggerExplosion() {
         document.getElementById('broken-overlay').style.opacity = 1;
         document.body.classList.add('shake');
-        // ใช้ setTimeout เพื่อให้ Alert ไม่บล็อก UI ทันที
         setTimeout(() => alert("💥 ตู้มมม!!! เกิดการระเบิด! (บีกเกอร์แตก)"), 100);
     }
+    
     function triggerToxic() {
         document.getElementById('toxic-overlay').style.opacity = 1;
         setTimeout(() => alert("☠️ แค่กๆ! ก๊าซพิษฟุ้งกระจาย!"), 100);
     }
+    
     function updateBars(damagePlayer, damageBeaker) {
         hp -= damagePlayer; beakerHp -= damageBeaker;
         if(hp < 0) hp = 0; if(beakerHp < 0) beakerHp = 0;
+        
         document.getElementById('health-bar').style.width = hp + "%";
         document.getElementById('text-health').innerText = hp + "%";
         document.getElementById('beaker-bar').style.width = beakerHp + "%";
         document.getElementById('text-beaker').innerText = beakerHp + "%";
         
-        // เปลี่ยนสีหลอดเลือดถ้าต่ำกว่า 30%
-        if(hp < 30) document.getElementById('health-bar').style.backgroundColor = "#ff4757"; else document.getElementById('health-bar').style.backgroundColor = "#00ff44";
+        if(hp < 30) document.getElementById('health-bar').style.backgroundColor = "#ff4757"; 
+        else document.getElementById('health-bar').style.backgroundColor = "#00ff44";
 
         if(hp === 0) setTimeout(() => alert("💀 Game Over! คุณได้รับสารพิษมากเกินไป"), 500);
         if(beakerHp === 0) setTimeout(() => alert("🧪 บีกเกอร์แตกแล้ว! การทดลองล้มเหลว"), 500);
