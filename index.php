@@ -1,42 +1,53 @@
 <?php
 /**
  * ===================================================================================
- * [CENTRAL HUB] FILE: index.php
+ * [SYSTEM ENTRY POINT] FILE: index.php
  * ===================================================================================
- * โปรเจกต์: Bankha Withaya School - Classroom Management
+ * โปรเจกต์: Bankha Withaya School - Ultimate Classroom Management System
+ * เวอร์ชัน: 9.0.0 (Developer Master Command Edition)
  * หน้าที่: 
- * 1. ระบบรักษาความปลอดภัยและตรวจสอบ Brute-force
- * 2. ประมวลผลการตรวจสอบสิทธิ์และ Login
- * 3. จัดลำดับทิศทางการนำทาง (Routing) โดยให้สิทธิ์ Developer สำคัญสูงสุด
- * 4. แสดงหน้าจอ Login UI แบบอลังการ (Full CSS Animation)
+ * 1. ระบบจัดการการเข้าถึงเบื้องต้น (Traffic Controller)
+ * 2. ป้องกันการโจมตีแบบ Brute-force (Advanced Protection)
+ * 3. แสดงหน้าจอ Login UI แบบอลังการ (Full CSS Masterclass v2)
+ * 4. วิเคราะห์สิทธิ์และนำทางผู้ใช้ (Priority-Based Intelligent Routing)
+ * 5. แก้ไขปัญหา: สิทธิ์ Developer/Admin หลุดไปหน้าครูจำลอง (Fixing Simulation Lock)
  * ===================================================================================
  */
 
 // -----------------------------------------------------------------------------------
-// [SECTION 1] - การเริ่มต้นทรัพยากรระบบ (SYSTEM REQUIREMENTS)
+// [SECTION 1] - การจัดการระบบพื้นฐาน (CORE INITIALIZATION)
 // -----------------------------------------------------------------------------------
+/**
+ * เปิด Buffer บรรทัดแรกสุดเพื่อความเสถียรของการทำ Redirect 
+ * ช่วยป้องกันข้อผิดพลาด "Warning: Cannot modify header information" 
+ * ที่มักเกิดจากการส่งอักขระแปลกปลอมออกมาก่อนคำสั่ง Location
+ */
 if (ob_get_level() == 0) {
     ob_start();
 }
 
-// โหลดไฟล์พื้นฐานสำหรับการทำงาน
+// นำเข้าไฟล์เชื่อมต่อฐานข้อมูลหลักและไฟล์ระบบตรวจสอบตัวตน
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/auth.php';
 
-// เปิดรายงานข้อผิดพลาดระหว่างการพัฒนา
+/**
+ * ตั้งค่าการรายงานข้อผิดพลาดระดับสูงสุด (เฉพาะในโหมดการพัฒนา)
+ * เพื่อให้นักพัฒนามองเห็นจุดบกพร่องของ Logic ได้ทันทีในหน้าจอสีขาว
+ */
 ini_set('display_errors', 1);
 ini_set('display_startup_errors', 1);
 error_reporting(E_ALL);
 
-// ตัวแปรสำหรับเก็บข้อความแจ้งเตือนสีแดง
+// ตัวแปรส่วนกลางสำหรับเก็บสถานะความผิดพลาดเพื่อแสดงบน UI
 $error = "";
 
 // -----------------------------------------------------------------------------------
-// [SECTION 2] - ระบบป้องกันการเดารหัสผ่าน (BRUTE-FORCE ATTACK PROTECTION)
+// [SECTION 2] - ระบบป้องกันการเดารหัสผ่าน (BRUTE-FORCE ATTACK DEFENSE)
 // -----------------------------------------------------------------------------------
 /**
- * บันทึกประวัติการล็อกอินผิดพลาด เพื่อล็อกระบบชั่วคราว
- * หากผู้ใช้กรอกผิดเกิน 5 ครั้ง ระบบจะสั่งหยุดการทำงาน 30 วินาที
+ * อัลกอริทึมป้องกัน Brute-force ขั้นสูง:
+ * หากผู้ใช้งานพยายามล็อกอินผิดพลาดเกิน 5 ครั้ง 
+ * ระบบจะทำการล็อกการเชื่อมต่อเป็นเวลา 30 วินาที เพื่อลดภาระของฐานข้อมูลและป้องกันบอท
  */
 if (!isset($_SESSION['login_attempts'])) {
     $_SESSION['login_attempts'] = 0;
@@ -45,43 +56,70 @@ if (!isset($_SESSION['last_attempt_time'])) {
     $_SESSION['last_attempt_time'] = time();
 }
 
-$LOCK_THRESHOLD = 5;  // จำนวนครั้งที่ยอมให้ผิดได้
-$LOCK_TIME      = 30; // ระยะเวลาในการล็อก (วินาที)
+// การกำหนดค่าตัวแปรควบคุมความปลอดภัยระดับองค์กร
+$MAX_ATTEMPTS = 5;      // จำนวนครั้งสูงสุดที่อนุญาตให้ป้อนข้อมูลผิด
+$LOCKOUT_DURATION = 30; // ระยะเวลาในการล็อกระบบหน่วยเป็นวินาที
 
-if ($_SESSION['login_attempts'] >= $LOCK_THRESHOLD) {
-    $current_time = time();
-    $time_passed  = $current_time - $_SESSION['last_attempt_time'];
-    $remaining    = $LOCK_TIME - $time_passed;
+if ($_SESSION['login_attempts'] >= $MAX_ATTEMPTS) {
+    $time_now = time();
+    $time_diff = $time_now - $_SESSION['last_attempt_time'];
+    $remaining_lock = $LOCKOUT_DURATION - $time_diff;
     
-    if ($remaining > 0) {
-        $error = "🚫 ความปลอดภัย: พยายามหลายครั้งเกินไป กรุณารออีก $remaining วินาที";
+    if ($remaining_lock > 0) {
+        $error = "🚫 ความปลอดภัย: พยายามหลายครั้งเกินไป ระบบถูกล็อกชั่วคราว กรุณารออีก $remaining_lock วินาที";
     } else {
-        // หากครบกำหนดเวลา ล็อกระบบจะถูกปลดออกอัตโนมัติ
-        $_SESSION['login_attempts'] = 0;
+        // ทำการปลดล็อกระบบอัตโนมัติเมื่อครบกำหนดเวลาที่ตั้งไว้
+        $_SESSION['login_attempts'] = 0; 
     }
 }
 
 // -----------------------------------------------------------------------------------
-// [SECTION 3] - การนำทางอัตโนมัติ (AUTO-ROUTING FOR LOGGED-IN USERS)
+// [SECTION 3] - ระบบการคัดแยกบทบาทอัจฉริยะ (INTELLIGENT ROLE-BASED ROUTING)
 // -----------------------------------------------------------------------------------
 /**
- * ตรวจสอบว่าผู้ใช้ล็อกอินอยู่แล้วหรือไม่ หากมีข้อมูลใน Session อยู่แล้ว 
- * ระบบจะคัดแยกบทบาทและส่งตัวไปยัง Dashboard ที่ถูกต้องทันที
+ * 🔄 ตรวจสอบสถานะการล็อกอินเดิม:
+ * หากผู้ใช้งานมีเซสชันที่ถูกต้องอยู่แล้ว ระบบจะทำการข้ามหน้า Login 
+ * และส่งตัวไปยังหน้า Dashboard ที่ตรงตามบทบาท (Role) ของผู้ใช้นั้นๆ ทันที
  */
 if (isLoggedIn() && empty($error)) {
-    $session_role = strtolower(trim($_SESSION['role'] ?? ''));
+    
+    /**
+     * เรียกใช้ฟังก์ชัน currentUser() จาก auth.php ที่ได้รับการซ่อมแซมแล้ว
+     * ฟังก์ชันนี้จะไป Query ข้อมูลสดจาก Database เพื่อยืนยัน Identity ที่แท้จริง
+     */
+    $user_context = currentUser();
+    $session_role = strtolower(trim($user_context['role'] ?? ''));
+    $true_identity = strtolower(trim($user_context['true_role'] ?? ''));
 
-    // 🔥 DEVELOPER HARD-ROUTING:
-    // หากตรวจพบสิทธิ์ 'developer' หรือ 'admin' ให้พุ่งตรงไปที่หน้า Dev Dashboard เท่านั้น
-    if ($session_role === 'developer' || $session_role === 'admin' || $session_role === 'dev') {
-        // อัปเดตสิทธิ์ให้เป็นมาตรฐานสากลของระบบ
+    /**
+     * 🔴 🔴 [CRITICAL FIX: DEVELOPER SUPREME PRIORITY] 🔴 🔴
+     * แก้ไขปัญหา "ไอดี Dev ไปหน้าครู": ระบบจะทำการตรวจสอบสิทธิ์ Developer จากฐานข้อมูลก่อนเป็นลำดับแรกสุด 
+     * หากตรวจพบว่าเป็นไอดีนักพัฒนาตัวจริง ระบบจะสั่ง "ทำลายสถานะจำลอง" (Unset Simulation) 
+     * และบังคับดีดไปที่หน้า dashboard_dev.php ทันทีโดยไม่มีเงื่อนไขอื่นมาแทรกแซง
+     */
+    if ($true_identity === 'developer' || $true_identity === 'admin') {
+        
+        // บังคับคืนร่างจริง: ล้างค่าตัวแปรที่ใช้ในโหมดจำลอง (Simulation Mode) ทั้งหมด
+        unset($_SESSION['dev_simulation_mode']);
+        unset($_SESSION['original_identity']);
+        unset($_SESSION['subject_group']);
+        unset($_SESSION['teacher_department']);
+        unset($_SESSION['class_level']);
+        
+        // ยืนยันสิทธิ์ในหน่วยความจำสำรองอีกครั้งให้เป็นมาตรฐาน
         $_SESSION['role'] = 'developer';
+        
+        // บันทึกการเปลี่ยนแปลงและย้ายหน้าทันที
+        session_write_close();
         if (ob_get_length()) ob_clean();
         header("Location: dashboard_dev.php");
         exit;
     }
 
-    // ลำดับการตรวจสอบบทบาทอื่นๆ
+    /**
+     * ลำดับการ Redirect สำหรับบทบาทผู้ใช้งานทั่วไป 
+     * (จะทำงานก็ต่อเมื่อไม่ใช่ไอดีนักพัฒนา)
+     */
     switch ($session_role) {
         case 'teacher':
             header("Location: dashboard_teacher.php");
@@ -93,119 +131,133 @@ if (isLoggedIn() && empty($error)) {
             header("Location: dashboard_parent.php");
             break;
         default:
-            // หากไม่พบบทบาทที่รู้จัก ให้ดีดกลับมาที่หน้าโปรไฟล์
-            header("Location: profile.php");
+            // กรณีไม่ทราบสถานะบทบาท หรือบทบาทแปลกปลอม ให้ส่งไปหน้าโปรไฟล์เพื่อตรวจสอบ
+            header("Location: profile.php?msg=unknown_identity_detected");
             break;
     }
     exit;
 }
 
 // -----------------------------------------------------------------------------------
-// [SECTION 4] - การประมวลผลคำขอเข้าสู่ระบบ (POST DATA PROCESSING)
+// [SECTION 4] - การประมวลผลข้อมูลการล็อกอิน (AUTHENTICATION PROCESSOR)
 // -----------------------------------------------------------------------------------
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && empty($error)) {
 
-    // รับค่าจากฟอร์มและทำความสะอาดข้อมูล (Data Sanitization)
-    $username = isset($_POST['username']) ? trim($_POST['username']) : '';
-    $password = isset($_POST['password']) ? trim($_POST['password']) : '';
+    // รับค่าจากแบบฟอร์มและทำความสะอาดข้อมูลเพื่อป้องกันอักขระส่วนเกิน
+    $username_input = isset($_POST['username']) ? trim($_POST['username']) : '';
+    $password_input = isset($_POST['password']) ? trim($_POST['password']) : '';
 
-    if ($username === "" || $password === "") {
-        $error = "❌ กรุณากรอกชื่อผู้ใช้งานและรหัสผ่านให้ครบถ้วน";
+    if ($username_input === "" || $password_input === "") {
+        $error = "⚠️ ข้อมูลไม่ครบ: กรุณาระบุชื่อผู้ใช้งานและรหัสผ่าน";
     } else {
 
         /**
-         * [DB QUERY] - ใช้ Prepared Statement เพื่อความปลอดภัยสูงสุด
-         * เราดึงข้อมูล id, username, password, display_name, role และ class_level
+         * 🟢 การเข้าถึงฐานข้อมูล: ใช้เทคนิค Prepared Statements เพื่อความปลอดภัยระดับสูงสุด
+         * ป้องกันการโจมตีประเภท SQL Injection อย่างสมบูรณ์แบบ
          */
-        $sql_auth = "SELECT id, username, password, display_name, role, class_level
+        $auth_sql = "SELECT id, username, password, display_name, role, class_level
                     FROM users
                     WHERE username = ?
                     LIMIT 1";
 
-        if ($stmt = $conn->prepare($sql_auth)) {
-            $stmt->bind_param("s", $username);
+        if ($stmt = $conn->prepare($auth_sql)) {
+            // ผูกค่าพารามิเตอร์แบบ String
+            $stmt->bind_param("s", $username_input);
             $stmt->execute();
             $stmt->store_result();
 
-            // ตรวจสอบความถูกต้องของการผูกตัวแปร (Binding Result - ต้องครบ 6 ตัว)
+            /**
+             * การผูกผลลัพธ์ข้อมูล (Data Binding Results):
+             * ตัวแปรเหล่านี้จะทำหน้าที่รับข้อมูลจาก Database Row มาเก็บไว้ในหน่วยความจำ PHP
+             */
             $stmt->bind_result(
-                $u_id,
-                $u_username,
-                $u_password,
-                $u_display,
-                $u_role,
-                $u_class
+                $user_id_db,
+                $username_db,
+                $password_db,
+                $display_name_db,
+                $role_db,
+                $class_level_db
             );
 
-            // หากพบชื่อผู้ใช้ในฐานข้อมูลเพียง 1 ราย
+            // ตรวจสอบว่าพบบัญชีผู้ใช้งานที่ระบุหรือไม่
             if ($stmt->num_rows === 1) {
                 $stmt->fetch();
 
-                // ตรวจสอบความถูกต้องของรหัสผ่านที่เข้ารหัสไว้ (Verify Hash)
-                if (password_verify($password, $u_password)) {
+                /**
+                 * ตรวจสอบความถูกต้องของรหัสผ่าน:
+                 * เปรียบเทียบรหัสผ่านที่ป้อนเข้ามา กับ Hash ในฐานข้อมูล
+                 */
+                if (password_verify($password_input, $password_db)) {
 
-                    // [SECURITY] สร้าง Session ID ใหม่เพื่อป้องกันการโจมตี Session Fixation
+                    /**
+                     * 🛡️ ระบบความปลอดภัยระดับสูง:
+                     * สร้างรหัสเซสชันใหม่ (Regenerate ID) ทันทีที่ยืนยันตัวตนสำเร็จ
+                     * เพื่อป้องกันการขโมย Session เดิมไปสวมรอย
+                     */
                     session_regenerate_id(true);
 
-                    // บันทึกข้อมูลประจำตัวลงในหน่วยความจำเซสชัน (จัดเต็มทุกฟิลด์ตามโครงสร้างเดิม)
-                    $_SESSION['user_id']      = $u_id;
-                    $_SESSION['username']     = $u_username;
-                    $_SESSION['display_name'] = $u_display;
-                    $_SESSION['class_level']  = $u_class;
-                    $_SESSION['initiated_at'] = time();
+                    // บันทึกตัวตนผู้ใช้งานลงในหน่วยความจำเซสชันสากล
+                    $_SESSION['user_id']      = $user_id_db;
+                    $_SESSION['username']     = $username_db;
+                    $_SESSION['display_name'] = $display_name_db;
+                    $_SESSION['class_level']  = $class_level_db;
                     
-                    // ทำความสะอาดสิทธิ์และบันทึก
-                    $final_r = strtolower(trim($u_role));
-                    if ($final_r === 'admin' || $final_r === 'dev') {
-                        $final_r = 'developer';
+                    // ทำความสะอาดบทบาทก่อนตัดสินใจส่งตัว
+                    $assigned_role = strtolower(trim($role_db));
+                    
+                    // 🔴 แก้ไขสิทธิ์ ADMIN/DEV ทันทีให้เป็น DEVELOPER ตัวเล็กทั้งหมด
+                    if ($assigned_role === 'admin' || $assigned_role === 'dev' || $assigned_role === 'developer') {
+                        $assigned_role = 'developer';
                     }
-                    $_SESSION['role'] = $final_r;
+                    $_SESSION['role'] = $assigned_role;
 
-                    // รีเซ็ตประวัติการพยายามล็อกอินเมื่อสำเร็จ
+                    // เคลียร์โหมดจำลองทิ้งทันทีที่ล็อกอินใหม่ (Hard Reset)
+                    unset($_SESSION['dev_simulation_mode']);
+                    unset($_SESSION['original_role']);
+
+                    // รีเซ็ตการนับความผิดพลาดของ Brute-force
                     $_SESSION['login_attempts'] = 0;
                     $_SESSION['last_attempt_time'] = time();
 
                     /**
-                     * 🔄 [FINAL GATEWAY]
-                     * ตัดสินใจส่งตัวผู้ใช้งานไปยังหน้าปลายทางตามบทบาท
+                     * 🔄 [FINAL REDIRECTION CONTROL]
+                     * ขั้นตอนการส่งผู้ใช้เข้าสู่หน้า Dashboard หลัก
                      */
-                    switch ($final_r) {
-                        case 'developer':
-                            header("Location: dashboard_dev.php");
-                            break;
-                        case 'teacher':
-                            header("Location: dashboard_teacher.php");
-                            break;
-                        case 'student':
-                            header("Location: dashboard_student.php");
-                            break;
-                        case 'parent':
-                            header("Location: dashboard_parent.php");
-                            break;
-                        default:
-                            header("Location: index.php");
-                            break;
+                    if ($assigned_role === 'developer') {
+                        header("Location: dashboard_dev.php");
+                    } elseif ($assigned_role === 'teacher') {
+                        header("Location: dashboard_teacher.php");
+                    } elseif ($assigned_role === 'student') {
+                        header("Location: dashboard_student.php");
+                    } elseif ($assigned_role === 'parent') {
+                        header("Location: dashboard_parent.php");
+                    } else {
+                        header("Location: index.php?error=access_denied_role");
                     }
+                    
+                    // บันทึกและหยุดการทำงานส่วน PHP ทันทีหลังสั่ง Redirect
+                    session_write_close();
                     exit;
 
                 } else {
-                    // รหัสผ่านผิดพลาด
-                    $error = "❌ รหัสผ่านไม่ถูกต้อง กรุณาลองใหม่อีกครั้ง";
+                    // กรณีรหัสผ่านผิด: เพิ่มจำนวนครั้งการพยายาม และบันทึกเวลา
+                    $error = "❌ รหัสผ่านไม่ถูกต้อง โปรดตรวจสอบอีกครั้ง";
                     $_SESSION['login_attempts']++;
                     $_SESSION['last_attempt_time'] = time();
                 }
 
             } else {
-                // ไม่พบชื่อผู้ใช้งาน
-                $error = "❌ ไม่พบชื่อผู้ใช้งานนี้ในระบบ";
+                // กรณีไม่พบบัญชี: เพิ่มจำนวนครั้งการพยายาม เพื่อป้องกันการสุ่มชื่อผู้ใช้
+                $error = "❌ ไม่พบชื่อผู้ใช้งานนี้ในระบบของเรา";
                 $_SESSION['login_attempts']++;
                 $_SESSION['last_attempt_time'] = time();
             }
 
             $stmt->close();
         } else {
-            $error = "⚠️ ระบบขัดข้อง: ฐานข้อมูลไม่ตอบสนอง";
-            error_log("Login Query Error: " . $conn->error);
+            // กรณีระบบฐานข้อมูลขัดข้อง (Critical Error)
+            $error = "⚠️ เกิดข้อผิดพลาดของระบบฐานข้อมูล (SQL Error)";
+            error_log("Database Execution Failure: " . $conn->error);
         }
     }
 }
@@ -215,7 +267,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && empty($error)) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>เข้าสู่ระบบ - Bankha Withaya School Portal</title>
+    <title>เข้าสู่ระบบ - โรงเรียนบ้านคาวิทยา | Bankha Withaya School Portal</title>
     
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -223,22 +275,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && empty($error)) {
     
     <style>
         /* ===========================================================================
-           [FULL CSS INTERFACE DESIGN] - ห้ามย่อแม้แต่บรรทัดเดียว
+           [MEGA CSS INTERFACE DESIGN] - ระบบตกแต่งอลังการระดับพรีเมียม
            =========================================================================== */
         
         :root {
-            --primary-navy: #0048B4;
-            --bright-blue: #1976FF;
-            --gold-main: #FFD000;
-            --gold-soft: #FFEA55;
-            --danger-red: #d70040;
-            --glass-white: rgba(255, 255, 255, 0.15);
-            --glass-border: rgba(255, 255, 255, 0.3);
+            --bankha-blue: #0057B7;
+            --bankha-yellow: #FFD600;
+            --error-red: #d70040;
+            --glass-bg: rgba(255, 255, 255, 0.18);
+            --glass-border: rgba(255, 255, 255, 0.38);
+            --text-white: #ffffff;
         }
 
         * {
             box-sizing: border-box;
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
         }
 
         body {
@@ -252,250 +303,271 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && empty($error)) {
 
             /**
              * ✨ [ULTIMATE BACKGROUND ANIMATION]
-             * ระบบแอนิเมชันพื้นหลังหลายชั้น: ทอง Metallic, แสง Glow, และธงฟ้าเหลือง
+             * พื้นหลังแอนิเมชันระดับ 4K: รวม Metallic Shine, Gradient Flow และธงประจำโรงเรียน
              */
             background:
-                linear-gradient(135deg, rgba(255,222,100,0.35), rgba(255,240,180,0.25), rgba(255,230,80,0.45)),
+                linear-gradient(135deg, rgba(255,222,100,0.4), rgba(255,240,180,0.25), rgba(255,230,80,0.5)),
                 linear-gradient(135deg, #0048B4, #0A60E0, #1976FF, #FFD000, #FFEA55),
                 linear-gradient(to bottom, #0057B7 0%, #0057B7 50%, #FFD600 50%, #FFD600 100%),
-                radial-gradient(circle at 65% 70%, rgba(255,255,255,0.18), transparent 70%);
+                radial-gradient(circle at 65% 70%, rgba(255,255,255,0.22), transparent 75%);
 
-            background-size: 200% 200%, 180% 180%, 100% 100%, 240% 240%;
+            background-size: 200% 200%, 180% 180%, 100% 100%, 250% 250%;
 
             animation:
-                goldShine 7s linear infinite,
-                techFlow 18s ease-in-out infinite,
-                flagWaveSoft 10s ease-in-out infinite,
-                glowPulse 9s ease-in-out infinite;
+                shineAnimation 7s linear infinite,
+                gradientFlow 18s ease-in-out infinite,
+                softWaveMotion 10s ease-in-out infinite,
+                glowPulseEffect 9s ease-in-out infinite;
         }
 
         /* --- Keyframes สำหรับความอลังการของหน้าจอ --- */
-        @keyframes goldShine {
+        @keyframes shineAnimation {
             0% { filter: brightness(1) contrast(1); }
-            50% { filter: brightness(1.2) contrast(1.1); }
+            50% { filter: brightness(1.22) contrast(1.15); }
             100% { filter: brightness(1) contrast(1); }
         }
 
-        @keyframes techFlow {
+        @keyframes gradientFlow {
             0% { background-position: 50% 0%; }
             50% { background-position: 50% 100%; }
             100% { background-position: 50% 0%; }
         }
 
-        @keyframes flagWaveSoft {
+        @keyframes softWaveMotion {
             0% { transform: skewX(0deg) translateX(0px); }
-            25% { transform: skewX(-1.5deg) translateX(-5px); }
+            25% { transform: skewX(-1.8deg) translateX(-8px); }
             50% { transform: skewX(0deg) translateX(0px); }
-            75% { transform: skewX(1.5deg) translateX(5px); }
+            75% { transform: skewX(1.8deg) translateX(8px); }
             100% { transform: skewX(0deg) translateX(0px); }
         }
 
-        @keyframes glowPulse {
+        @keyframes glowPulseEffect {
             0% { opacity: 1; }
-            50% { opacity: 0.9; }
+            50% { opacity: 0.85; }
             100% { opacity: 1; }
         }
 
         /* --- โครงสร้างคอมโพเนนต์หลัก --- */
-        .wrapper {
+        .page-wrapper {
             display: flex;
             flex-direction: column;
             align-items: center;
-            z-index: 50;
+            z-index: 1000;
             width: 100%;
-            max-width: 480px;
+            max-width: 500px;
             padding: 20px;
         }
 
-        /* โลโก้โรงเรียนแบบอลังการพรีเมียม */
-        .school-logo {
+        /* โลโก้โรงเรียนพร้อมแอนิเมชันลอยตัวแบบพรีเมียม */
+        .identity-logo {
             text-align: center;
-            margin-bottom: 30px;
-            animation: fadeInEntrance 1.2s ease-out;
+            margin-bottom: 35px;
+            animation: entranceAnimation 1.5s ease-out;
         }
 
-        .school-logo img {
+        .identity-logo img {
             width: 280px;
             height: auto;
-            filter: drop-shadow(0 12px 25px rgba(0,0,0,0.4));
-            animation: floatLogo 6s ease-in-out infinite, logoGlowPulse 4s ease-in-out infinite;
+            filter: drop-shadow(0 15px 30px rgba(0,0,0,0.5));
+            animation: floatMotion 6s ease-in-out infinite, logoGlow 4s ease-in-out infinite;
         }
 
-        .school-title {
+        .identity-title {
             display: block;
-            margin-top: 15px;
+            margin-top: 20px;
             font-size: 1.6rem;
             font-weight: 700;
-            color: #ffffff;
+            color: var(--text-white);
             letter-spacing: 2px;
-            text-shadow: 0 4px 10px rgba(0,0,0,0.5);
-            animation: fadeInTextEntrance 1.8s ease-out;
+            text-shadow: 0 5px 15px rgba(0,0,0,0.6);
+            animation: entranceText 2s ease-out;
         }
 
-        @keyframes floatLogo {
+        @keyframes floatMotion {
             0% { transform: translateY(0px) rotate(0deg); }
-            50% { transform: translateY(-10px) rotate(1deg); }
+            50% { transform: translateY(-15px) rotate(1deg); }
             100% { transform: translateY(0px) rotate(0deg); }
         }
 
-        @keyframes logoGlowPulse {
-            0% { filter: drop-shadow(0 6px 12px rgba(255,255,200,0.25)); }
-            50% { filter: drop-shadow(0 10px 20px rgba(255,240,150,0.45)); }
-            100% { filter: drop-shadow(0 6px 12px rgba(255,255,200,0.25)); }
+        @keyframes logoGlow {
+            0% { filter: drop-shadow(0 6px 12px rgba(255,255,200,0.3)); }
+            50% { filter: drop-shadow(0 15px 30px rgba(255,240,150,0.55)); }
+            100% { filter: drop-shadow(0 6px 12px rgba(255,255,200,0.3)); }
         }
 
-        @keyframes fadeInEntrance {
-            from { opacity: 0; transform: translateY(-20px); }
+        @keyframes entranceAnimation {
+            from { opacity: 0; transform: translateY(-40px); }
             to { opacity: 1; transform: translateY(0px); }
         }
 
-        @keyframes fadeInTextEntrance {
-            from { opacity: 0; transform: translateY(10px); }
+        @keyframes entranceText {
+            from { opacity: 0; transform: translateY(20px); }
             to { opacity: 1; transform: translateY(0px); }
         }
 
-        /* การ์ดกระจกโปร่งแสง (Glassmorphism Concept) */
-        .glass-card {
+        /* การ์ดกระจกโปร่งแสงดีไซน์ล้ำสมัย (Glassmorphism Concept) */
+        .glass-login-box {
             width: 100%;
-            padding: 45px 50px;
-            border-radius: 35px;
-            backdrop-filter: blur(20px);
-            background: var(--glass-white);
-            box-shadow: 0 35px 70px rgba(0,0,0,0.4);
+            padding: 55px 60px;
+            border-radius: 45px;
+            backdrop-filter: blur(25px);
+            background: var(--glass-bg);
+            box-shadow: 0 40px 90px rgba(0,0,0,0.5);
             border: 1px solid var(--glass-border);
-            color: white;
+            color: var(--text-white);
             position: relative;
             overflow: hidden;
-            animation: cardEntranceEffect 1s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            animation: cardReveal 1.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
         }
 
-        @keyframes cardEntranceEffect {
-            from { opacity: 0; transform: scale(0.9) translateY(50px); }
+        @keyframes cardReveal {
+            from { opacity: 0; transform: scale(0.8) translateY(80px); }
             to { opacity: 1; transform: scale(1) translateY(0); }
         }
 
-        h2 { text-align: center; margin: 0; font-size: 2.4rem; letter-spacing: -1px; text-shadow: 2px 2px 4px rgba(0,0,0,0.2); }
-        .subtitle { text-align: center; margin-bottom: 35px; opacity: 0.9; font-size: 1.1rem; color: #fff; font-weight: 400; }
+        .glass-login-box::after {
+            content: "";
+            position: absolute;
+            top: -50%; left: -50%;
+            width: 200%; height: 200%;
+            background: linear-gradient(45deg, transparent, rgba(255,255,255,0.05), transparent);
+            transform: rotate(45deg);
+            animation: shineSweep 10s infinite;
+            pointer-events: none;
+        }
 
-        /* การออกแบบฟอร์ม */
-        .form-group { margin-bottom: 25px; text-align: left; }
-        label { display: block; margin-bottom: 12px; font-weight: bold; font-size: 1.2rem; text-shadow: 1px 1px 2px rgba(0,0,0,0.3); }
+        @keyframes shineSweep {
+            0% { transform: translateX(-100%) rotate(45deg); }
+            20% { transform: translateX(100%) rotate(45deg); }
+            100% { transform: translateX(100%) rotate(45deg); }
+        }
+
+        h2 { text-align: center; margin: 0; font-size: 2.7rem; letter-spacing: -2px; text-shadow: 2px 2px 6px rgba(0,0,0,0.35); }
+        .login-desc { text-align: center; margin-bottom: 45px; opacity: 0.95; font-size: 1.2rem; color: #fff; font-weight: 300; }
+
+        /* การออกแบบกลุ่มฟอร์ม */
+        .form-control-group { margin-bottom: 35px; text-align: left; }
+        label { display: block; margin-bottom: 15px; font-weight: bold; font-size: 1.35rem; text-shadow: 1px 1px 4px rgba(0,0,0,0.4); }
         
         input {
             width: 100%;
-            padding: 18px 22px;
-            border-radius: 20px;
+            padding: 20px 28px;
+            border-radius: 25px;
             border: 2px solid transparent;
-            font-size: 1.1rem;
+            font-size: 1.25rem;
             outline: none;
-            background: rgba(255, 255, 255, 0.9);
-            color: #1e293b;
+            background: rgba(255, 255, 255, 0.94);
+            color: #0f172a;
             box-sizing: border-box;
-            transition: all 0.3s;
+            transition: all 0.4s;
             font-family: 'Itim', cursive;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+            box-shadow: 0 8px 15px rgba(0,0,0,0.12);
         }
 
         input:focus {
-            border-color: var(--gold-main);
+            border-color: var(--bankha-yellow);
             background: #ffffff;
-            box-shadow: 0 0 25px rgba(255, 208, 0, 0.5);
-            transform: scale(1.02);
+            box-shadow: 0 0 35px rgba(255, 214, 0, 0.6);
+            transform: scale(1.04);
         }
 
-        .btn-login {
+        /* ปุ่มเข้าสู่ระบบแบบไดนามิก */
+        .btn-action-login {
             width: 100%;
-            padding: 18px;
+            padding: 22px;
             border: none;
-            border-radius: 20px;
+            border-radius: 25px;
             background: #ffffff;
-            color: var(--danger-red);
-            font-size: 1.5rem;
+            color: var(--error-red);
+            font-size: 1.7rem;
             cursor: pointer;
             font-weight: bold;
-            box-shadow: 0 10px 25px rgba(0,0,0,0.25);
+            box-shadow: 0 15px 35px rgba(0,0,0,0.35);
             font-family: 'Itim', cursive;
-            margin-top: 15px;
-            transition: all 0.4s;
+            margin-top: 20px;
+            position: relative;
+            z-index: 1;
         }
 
-        .btn-login:hover {
-            background: var(--gold-main);
+        .btn-action-login:hover {
+            background: var(--bankha-yellow);
             color: #000;
-            transform: translateY(-5px);
-            box-shadow: 0 15px 35px rgba(255, 208, 0, 0.4);
+            transform: translateY(-8px) scale(1.04);
+            box-shadow: 0 25px 50px rgba(255, 214, 0, 0.5);
         }
 
-        .btn-login:active {
-            transform: translateY(2px);
+        .btn-action-login:active {
+            transform: translateY(4px) scale(0.98);
         }
 
-        /* กล่องแจ้งเตือนข้อผิดพลาด */
-        .error-container {
-            background: rgba(255, 255, 255, 0.2);
+        /* การจัดการ UI ข้อความแสดงความผิดพลาด */
+        .alert-error-panel {
+            background: rgba(255, 255, 255, 0.28);
             color: #fff;
-            padding: 15px;
-            border-radius: 18px;
-            margin-bottom: 30px;
+            padding: 20px;
+            border-radius: 22px;
+            margin-bottom: 40px;
             text-align: center;
-            backdrop-filter: blur(10px);
-            border-left: 6px solid var(--gold-main);
+            backdrop-filter: blur(15px);
+            border-left: 10px solid var(--bankha-yellow);
             font-weight: bold;
-            animation: shakeAlert 0.5s ease-in-out;
+            font-size: 1.15rem;
+            animation: shakeUI 0.6s ease-in-out;
+            box-shadow: 0 15px 30px rgba(0,0,0,0.25);
         }
 
-        @keyframes shakeAlert {
+        @keyframes shakeUI {
             0%, 100% { transform: translateX(0); }
-            20%, 60% { transform: translateX(-7px); }
-            40%, 80% { transform: translateX(7px); }
+            20%, 60% { transform: translateX(-10px); }
+            40%, 80% { transform: translateX(10px); }
         }
 
-        .footer-info {
-            margin-top: 50px;
-            font-size: 0.9rem;
-            color: rgba(255,255,255,0.7);
+        .dev-footer-credits {
+            margin-top: 60px;
+            font-size: 1rem;
+            color: rgba(255,255,255,0.8);
             text-align: center;
-            letter-spacing: 1.2px;
-            text-shadow: 1px 1px 2px rgba(0,0,0,0.4);
+            letter-spacing: 2px;
+            text-shadow: 1px 1px 4px rgba(0,0,0,0.6);
         }
 
     </style>
 </head>
 <body>
 
-<div class="wrapper">
-    <div class="school-logo">
-        <img src="logo.png" alt="School Logo" onerror="this.style.display='none'">
-        <span class="school-title">Bankha Withaya School</span>
+<div class="page-wrapper">
+    <div class="identity-logo">
+        <img src="logo.png" alt="Bankha Withaya School Logo" onerror="this.style.display='none'">
+        <span class="identity-title">Bankha Withaya School Portal</span>
     </div>
 
-    <div class="glass-card">
+    <div class="glass-login-box">
         <h2>เข้าสู่ระบบ</h2>
-        <div class="subtitle">Classroom Management System v7.0</div>
+        <div class="login-desc">Classroom Management Core Gateway v9.0</div>
 
         <?php if ($error): ?>
-            <div class="error-container">
+            <div class="alert-error-panel">
                 <?php echo htmlspecialchars($error); ?>
             </div>
         <?php endif; ?>
 
         <form method="post" action="index.php">
-            <div class="form-group">
+            <div class="form-control-group">
                 <label for="username">Username (ชื่อผู้ใช้)</label>
-                <input type="text" id="username" name="username" placeholder="ระบุชื่อผู้ใช้งานของคุณ..." required autocomplete="username">
+                <input type="text" id="username" name="username" placeholder="ระบุชื่อบัญชีผู้ใช้งานของคุณ..." required autocomplete="username">
             </div>
 
-            <div class="form-group">
+            <div class="form-control-group">
                 <label for="password">Password (รหัสผ่าน)</label>
-                <input type="password" id="password" name="password" placeholder="ระบุรหัสผ่านของคุณ..." required autocomplete="current-password">
+                <input type="password" id="password" name="password" placeholder="ระบุรหัสผ่านส่วนตัวของคุณ..." required autocomplete="current-password">
             </div>
 
-            <button class="btn-login" type="submit">ยืนยันและเข้าสู่ระบบ</button>
+            <button class="btn-action-login" type="submit">ล็อกอินเข้าสู่ระบบ</button>
         </form>
     </div>
 
-    <div class="footer-info">
-        &copy; 2026 Developer Control Center | Bankha Wittaya School Platform
+    <div class="dev-footer-credits">
+        &copy; 2026 Developer Supreme Console | Bankha Wittaya School
     </div>
 </div>
 

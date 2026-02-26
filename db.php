@@ -1,23 +1,26 @@
 <?php
-// db.php - Database Connection (Universal Support: Localhost & InfinityFree)
-
-// เปิดการแสดง Error ของ MySQLi แบบ Exception เพื่อดักจับ Error เช่น การสมัครสมาชิกซ้ำ
+/**
+ * ===================================================================================
+ * [DATABASE LAYER] FILE: db.php
+ * ===================================================================================
+ */
+// เปิดการแสดง Error ของ MySQLi แบบเข้มงวด
 mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
 
-// ตรวจสอบ Environment ว่ารันบน Localhost หรือ Server จริง
+// ตรวจสอบสภาพแวดล้อม (Local vs Production)
 $whitelist = array('127.0.0.1', '::1', 'localhost');
 $isLocal = in_array($_SERVER['REMOTE_ADDR'], $whitelist) || 
            (isset($_SERVER['HTTP_HOST']) && strpos($_SERVER['HTTP_HOST'], 'localhost') !== false);
 
 if ($isLocal) {
-    // 🏠 Localhost / MAMP Configuration
+    // 🏠 Localhost Configuration
     $host   = 'localhost';
     $user   = 'root';
-    $pass   = 'root';       // MAMP='root', XAMPP='' (ว่าง)
+    $pass   = 'root'; 
     $dbname = 'classroom_mgmt';
-    $port   = 8889;         // MAMP Default Port
+    $port   = 8889; 
 } else {
-    // ☁️ InfinityFree / Production Configuration
+    // ☁️ Production Configuration (InfinityFree)
     $host   = 'sql206.infinityfree.com';
     $user   = 'if0_40963793';
     $pass   = 'O5NG2LRa26znN5X';
@@ -26,18 +29,22 @@ if ($isLocal) {
 }
 
 try {
-    // เชื่อมต่อฐานข้อมูล
+    // สถาปนาการเชื่อมต่อ
     $conn = new mysqli($host, $user, $pass, $dbname, $port);
     
-    // ตั้งค่าภาษาไทยให้สมบูรณ์
+    // บังคับการจัดรูปแบบอักขระให้รองรับภาษาไทย 100%
     $conn->set_charset("utf8mb4");
-    $conn->query("SET time_zone = '+07:00'"); // ตั้งเวลา Database ให้ตรงกับไทย
+    $conn->query("SET names utf8mb4");
+    $conn->query("SET time_zone = '+07:00'");
 
 } catch (mysqli_sql_exception $e) {
-    // บันทึก Error ลง Error Log ของ Server แทนการแสดงหน้าเว็บ (ไม่เผยรหัสผ่าน)
-    error_log("Database Connection Error: " . $e->getMessage());
+    // เก็บประวัติ Error ไว้ใน Server แทนการแสดงรหัสผ่านออกหน้าจอ
+    error_log("Database Critical Error: " . $e->getMessage());
     
-    // แจ้งเตือนผู้ใช้แบบสุภาพ (ไม่เผย Path ของ Server)
-    die("<h3>System Error</h3><p>ไม่สามารถเชื่อมต่อฐานข้อมูลได้ กรุณาตรวจสอบไฟล์ db.php หรือสถานะ Server</p>");
+    // แจ้งเตือนผู้ใช้งานแบบ Clean UI
+    die("<div style='text-align:center; padding:50px; font-family:sans-serif;'>
+            <h2 style='color:#ef4444;'>❌ System Maintenance</h2>
+            <p>ระบบฐานข้อมูลไม่ตอบสนอง กรุณาตรวจสอบไฟล์ db.php หรือการเชื่อมต่อเซิร์ฟเวอร์</p>
+         </div>");
 }
 ?>
