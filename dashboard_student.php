@@ -1,42 +1,42 @@
 <?php
 // ===================================================================================
 // FILE: dashboard_student.php 
-// อัปเดตทางเข้า Ultimate Lab (เต็มรูปแบบ ห้ามย่อ)
+// อัปเดตทางเข้า Ultimate Lab (เต็มรูปแบบ ห้ามย่อ + ป้องกัน 500 Error)
 // ===================================================================================
 
-if (ob_get_level() == 0) ob_start();
-session_start();
 require_once 'auth.php';
 require_once 'db.php';
-
 requireRole(['student', 'developer']);
 
-// ป้องกันตัวแปรว่างแล้วทำให้ SQL แครช (ดักจับ Session)
-$my_id = $_SESSION['user_id'] ?? $_SESSION['id'] ?? 0;
+$my_id = intval($_SESSION['user_id'] ?? $_SESSION['id'] ?? 0);
 if ($my_id == 0) {
     header("Location: index.php");
     exit;
 }
 
-// ใช้ Prepared Statement ดึงข้อมูลให้ปลอดภัย ไม่ให้เกิด Syntax Error
-$stmt = $conn->prepare("SELECT * FROM users WHERE id = ?");
-$stmt->bind_param("i", $my_id);
-$stmt->execute();
-$user = $stmt->get_result()->fetch_assoc();
+try {
+    $stmt = $conn->prepare("SELECT * FROM users WHERE id = ?");
+    if (!$stmt) throw new Exception("Prepare Statement Failed: " . $conn->error);
+    $stmt->bind_param("i", $my_id);
+    $stmt->execute();
+    $user = $stmt->get_result()->fetch_assoc();
+} catch (Exception $e) {
+    die("Database Error: โปรดติดต่อ Admin (" . $e->getMessage() . ")");
+}
 
 if (!$user) {
     die("ไม่พบข้อมูลนักเรียนในระบบ กรุณาล็อกอินใหม่");
 }
 
-// เช็คกิลด์
-$has_guild = !empty($user['guild_id']);
+// เช็คกิลด์ (ป้องกัน Error ถ้าคอลัมน์ guild_id ยังไม่มีใน DB)
+$has_guild = isset($user['guild_id']) ? !empty($user['guild_id']) : false;
 if (!$has_guild && !isset($_GET['skip_sort'])) {
     header("Location: guild_selection.php"); 
     exit;
 }
 
 // เช็คว่าเล่น Daily Quest หรือยัง
-$daily_played = ($user['last_daily_play'] == date('Y-m-d'));
+$daily_played = (isset($user['last_daily_play']) && $user['last_daily_play'] == date('Y-m-d'));
 
 $is_sim = (isset($_SESSION['dev_simulation_mode']) || (isset($_SESSION['original_role']) && $_SESSION['original_role']=='developer'));
 ?>
@@ -231,9 +231,9 @@ $is_sim = (isset($_SESSION['dev_simulation_mode']) || (isset($_SESSION['original
     <div class="profile-widget">
         <div class="profile-info">
             <span class="profile-name"><?= htmlspecialchars($user['display_name']) ?></span>
-            <span class="xp-badge">LV. <?= floor($user['total_score']/100) + 1 ?> (<?= $user['total_score'] ?> XP)</span>
+            <span class="xp-badge">LV. <?= floor(($user['total_score'] ?? 0)/100) + 1 ?> (<?= $user['total_score'] ?? 0 ?> XP)</span>
         </div>
-        <a href="profile.php"><img src="<?= $user['profile_pic'] ? 'uploads/'.$user['profile_pic'] : 'logo.png' ?>" class="avatar-img"></a>
+        <a href="profile.php"><img src="<?= !empty($user['profile_pic']) ? 'uploads/'.$user['profile_pic'] : 'logo.png' ?>" class="avatar-img"></a>
         <a href="logout.php" class="logout-btn">Logout</a>
     </div>
 </div>

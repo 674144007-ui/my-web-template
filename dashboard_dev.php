@@ -1,27 +1,38 @@
 <?php
 // dashboard_dev.php - Dev Dashboard + Realtime Stats
-if (ob_get_level() == 0) ob_start();
-session_start();
 require_once 'auth.php';
 require_once 'db.php';
 requireRole(['developer', 'admin']);
 
-$my_id = $_SESSION['user_id'];
-$user = $conn->query("SELECT * FROM users WHERE id = $my_id")->fetch_assoc();
+$my_id = intval($_SESSION['user_id'] ?? $_SESSION['id'] ?? 0);
 
-// --- Real-time & Stats Logic ---
-// 1. นับคนออนไลน์ (Active ใน 5 นาทีล่าสุด)
-$online_res = $conn->query("SELECT COUNT(*) as cnt FROM users WHERE last_activity > NOW() - INTERVAL 5 MINUTE");
-$online_count = $online_res->fetch_assoc()['cnt'];
+try {
+    $user = $conn->query("SELECT * FROM users WHERE id = $my_id")->fetch_assoc();
+} catch (Exception $e) {
+    die("Database Error (Users): " . $e->getMessage());
+}
 
-// 2. นับยอด Login วันนี้
-$today_str = date('Y-m-d');
-$login_res = $conn->query("SELECT COUNT(*) as cnt FROM login_logs WHERE DATE(login_time) = '$today_str'");
-$today_login_count = $login_res->fetch_assoc()['cnt'];
+// --- Real-time & Stats Logic (หุ้มด้วย Try Catch ป้องกัน 500 Error จากตารางที่ยังไม่ถูกสร้าง) ---
+$online_count = 0;
+$today_login_count = 0;
+$student_count = 0;
 
-// 3. นับจำนวนนักเรียนทั้งหมด
-$stu_res = $conn->query("SELECT COUNT(*) as cnt FROM users WHERE role='student' AND status='active'");
-$student_count = $stu_res->fetch_assoc()['cnt'];
+try {
+    $online_res = $conn->query("SELECT COUNT(*) as cnt FROM users WHERE last_activity > NOW() - INTERVAL 5 MINUTE");
+    if ($online_res) $online_count = $online_res->fetch_assoc()['cnt'];
+} catch (Exception $e) { }
+
+try {
+    $today_str = date('Y-m-d');
+    $login_res = $conn->query("SELECT COUNT(*) as cnt FROM login_logs WHERE DATE(login_time) = '$today_str'");
+    if ($login_res) $today_login_count = $login_res->fetch_assoc()['cnt'];
+} catch (Exception $e) { }
+
+try {
+    $stu_res = $conn->query("SELECT COUNT(*) as cnt FROM users WHERE role='student' AND status='active'");
+    if ($stu_res) $student_count = $stu_res->fetch_assoc()['cnt'];
+} catch (Exception $e) { }
+
 ?>
 <!DOCTYPE html>
 <html lang="th">
@@ -77,7 +88,7 @@ $student_count = $stu_res->fetch_assoc()['cnt'];
             <div style="font-weight:bold;"><?= htmlspecialchars($user['display_name']) ?></div>
             <div style="font-size:0.8rem; color:#ef4444;">ADMIN</div>
         </div>
-        <a href="profile.php"><img src="<?= $user['profile_pic'] ? 'uploads/'.$user['profile_pic'] : 'logo.png' ?>" class="avatar-img"></a>
+        <a href="profile.php"><img src="<?= !empty($user['profile_pic']) ? 'uploads/'.$user['profile_pic'] : 'logo.png' ?>" class="avatar-img"></a>
         <a href="logout.php" style="color:#ef4444; text-decoration:none; border:1px solid #ef4444; padding:5px 10px; border-radius:8px;">Logout</a>
     </div>
 </div>

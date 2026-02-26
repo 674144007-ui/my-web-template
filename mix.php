@@ -1,70 +1,63 @@
 <?php
 // ===================================================================================
-// FILE: mix.php (FULL VERSION - ULTIMATE SURVIVAL LAB)
+// FILE: mix.php (ULTIMATE SURVIVAL LAB - MEGA FULL VERSION)
 // ===================================================================================
-// อัปเดต: แก้ไขบัคคำสั่ง SQL ชนกัน, แก้ไข Session หลุด, และจัดการ Logic การผสมสีให้ปลอดภัย
+// อัปเดต: แก้ไขปัญหา HTTP 500 โดยการจัดการ Buffer และ API Response อย่างเข้มงวด
+// โครงสร้าง: [BACKEND API] -> [FRONTEND HTML] -> [FULL PERIODIC DATA] -> [JS ENGINE]
 // ===================================================================================
 
-ob_start(); // เปิด Buffer ป้องกันปัญหา Headers already sent
+// 1. การตั้งค่าระบบพื้นฐานและการจัดการ Error
+ini_set('display_errors', 1);
+ini_set('display_startup_errors', 1);
+error_reporting(E_ALL);
 
-// 🔴 FIX: ลบ session_start() ออกจากตรงนี้ แล้วให้ auth.php เป็นตัวจัดการ Session อย่างสมบูรณ์
-require_once 'auth.php'; // โหลดระบบตรวจสอบสิทธิ์และ Session (ต้องเรียกเป็นไฟล์แรก)
-require_once 'db.php';   // โหลดการเชื่อมต่อฐานข้อมูล
+// ป้องกันการส่ง Output ก่อน Header (สาเหตุหนึ่งของ 500/Headers Already Sent)
+ob_start();
 
-// 1. ตรวจสอบสิทธิ์ (เปิดให้นักเรียน, ครู, นักพัฒนา และผู้ปกครอง เข้าถึงหน้า Lab ได้)
-if (function_exists('requireRole')) {
-    requireRole(['student', 'teacher', 'developer', 'admin', 'parent']);
+// 2. โหลดระบบความปลอดภัยและฐานข้อมูล
+require_once 'auth.php';
+require_once 'db.php';
+
+// ตรวจสอบการเชื่อมต่อฐานข้อมูล
+if (!$conn || $conn->connect_error) {
+    die("Database Connection Failed: " . ($conn ? $conn->connect_error : "Connection object is null"));
 }
 
-// 2. ดึงข้อมูลผู้ใช้งานปัจจุบันอย่างปลอดภัยที่สุด
-$user_id = $_SESSION['user_id'] ?? $_SESSION['id'] ?? 0;
-$role = $_SESSION['role'] ?? '';
-$class_level = $_SESSION['class_level'] ?? '';
+// 3. ตรวจสอบ Role (สิทธิ์การเข้าถึง)
+requireRole(['developer', 'student', 'teacher', 'admin', 'parent']);
 
-if ($user_id <= 0) {
-    die("Session หมดอายุ หรือ ไม่พบข้อมูลผู้ใช้ กรุณาล็อกอินใหม่อีกครั้ง");
+// 4. ดึงข้อมูล User ปัจจุบัน
+$user = currentUser();
+if (!$user) {
+    die("Session Expired: กรุณาล็อกอินใหม่อีกครั้ง");
 }
 
-// หากไม่พบข้อมูล Class Level ใน Session ให้ดึงจากฐานข้อมูลเพื่อความชัวร์ 
-if (empty($class_level) && $role === 'student') {
-    $stmt_user = $conn->prepare("SELECT role, class_level FROM users WHERE id = ?");
-    if ($stmt_user) {
-        $stmt_user->bind_param("i", $user_id);
-        $stmt_user->execute();
-        $res_user = $stmt_user->get_result();
-        if ($res_user && $res_user->num_rows > 0) {
-            $u_data = $res_user->fetch_assoc();
-            $role = $u_data['role'];
-            $class_level = $u_data['class_level'];
-            $_SESSION['role'] = $role; // อัปเดตกลับเข้า Session
-            $_SESSION['class_level'] = $class_level;
-        }
-        $stmt_user->close();
-    }
-}
+$user_id = $user['id'] ?? 0;
+$role = $user['role'] ?? '';
+$class_level = $user['class_level'] ?? '';
 
 // ===================================================================================
-// [PART 1] BACKEND API LOGIC (ส่วนประมวลผลการผสมสารเคมีแบบ AJAX)
+// [PART 1] BACKEND API LOGIC (ส่วนประมวลผล AJAX)
 // ===================================================================================
 
 if (isset($_GET['action'])) {
     
-    // สำคัญมาก: ล้าง Output ขยะที่อาจหลุดมาจากไฟล์อื่นก่อนส่ง JSON ป้องกันจอขาว
-    while (ob_get_level()) { ob_end_clean(); }
+    // ล้าง Output Buffer ก่อนส่ง JSON ป้องกันอักขระแปลกปลอม
+    if (ob_get_length()) ob_clean();
 
     header('Content-Type: application/json; charset=utf-8');
+    
+    // ปิด Error display เฉพาะส่วน API เพื่อไม่ให้ Error ข้อความไปปนกับ JSON
     ini_set('display_errors', 0);
-    error_reporting(0); // ปิดการโชว์ Error ฝั่ง Server ป้องกัน JSON พัง
+    error_reporting(0);
 
     try {
-        // --- API: get_chemicals (ดึงรายชื่อสารเคมีไปแสดงใน Dropdown) ---
+        // --- API: get_chemicals (ดึงรายการสารเคมีทั้งหมด) ---
         if ($_GET['action'] === 'get_chemicals') {
-            if ($conn->connect_error) throw new Exception("DB Error: " . $conn->connect_error);
-
             $sql = "SELECT id, name, formula, type FROM chemicals ORDER BY type, name";
             $result = $conn->query($sql);
             
-            if (!$result) throw new Exception("Query Error: " . $conn->error);
+            if (!$result) throw new Exception("Query Failed: " . $conn->error);
             
             $data = [];
             while ($row = $result->fetch_assoc()) {
@@ -81,10 +74,10 @@ if (isset($_GET['action'])) {
             exit;
         }
 
-        // --- API: mix (คำนวณการทำปฏิกิริยาเคมีและสีที่เปลี่ยนไป) ---
+        // --- API: mix (ประมวลผลการทำปฏิกิริยา) ---
         if ($_GET['action'] === 'mix') {
             
-            // Helper: แปลงรหัสสี Hex เป็นชื่อสีภาษาไทยเพื่อให้แสดงผลสวยงาม
+            // Helper: ฟังก์ชันจัดการสี (Thai Name)
             $getThaiColorName = function($hex) {
                 $hex = strtoupper(ltrim($hex, '#'));
                 $map = [
@@ -92,30 +85,25 @@ if (isset($_GET['action'])) {
                     'FF0000' => 'สีแดงสด', '00FF00' => 'สีเขียวสด', '0000FF' => 'สีน้ำเงิน',
                     'FFFF00' => 'สีเหลือง', 'FFA500' => 'สีส้ม', '800080' => 'สีม่วง',
                     'C0C0C0' => 'สีเงิน / เทา', '3B82F6' => 'สีฟ้าสดใส',
-                    'FEF08A' => 'สีเหลืองอ่อน', '1D4ED8' => 'สีน้ำเงินเข้ม'
+                    'FEF08A' => 'สีเหลืองอ่อน', '1D4ED8' => 'สีน้ำเงินเข้ม',
+                    '000080' => 'สีน้ำเงินกรมท่า', 'A52A2A' => 'สีน้ำตาล', '808080' => 'สีเทา'
                 ];
-                return $map[$hex] ?? "สีผสม (รหัส: #$hex)";
+                return $map[$hex] ?? "สีผสมเฉพาะตัว (รหัส: #$hex)";
             };
 
-            // 🔴 FIX: Helper: คำนวณสีผสมแบบเฉลี่ยน้ำหนักตามปริมาตร (Volume) และดักจับความยาว String ป้องกันบั๊ก
+            // Helper: ฟังก์ชันผสมสีตามปริมาตร (Weighted Color Mixing)
             $mixColorsWeighted = function($hex1, $vol1, $hex2, $vol2) {
-                // ล้างอักขระแปลกปลอมออกให้เหลือแต่ Hex
-                $hex1 = preg_replace('/[^0-9A-Fa-f]/', '', $hex1 ?: 'FFFFFF');
-                $hex2 = preg_replace('/[^0-9A-Fa-f]/', '', $hex2 ?: 'FFFFFF');
+                $clean = function($h) {
+                    $h = preg_replace('/[^0-9A-Fa-f]/', '', $h ?: 'FFFFFF');
+                    if(strlen($h) === 3) $h = $h[0].$h[0].$h[1].$h[1].$h[2].$h[2];
+                    return (strlen($h) === 6) ? $h : 'FFFFFF';
+                };
                 
-                // แปลง 3 หลักให้เป็น 6 หลัก
-                if(strlen($hex1) === 3) $hex1 = $hex1[0].$hex1[0].$hex1[1].$hex1[1].$hex1[2].$hex1[2];
-                elseif(strlen($hex1) !== 6) $hex1 = 'FFFFFF'; // Fallback ถ้าข้อมูลใน DB พัง
-                
-                if(strlen($hex2) === 3) $hex2 = $hex2[0].$hex2[0].$hex2[1].$hex2[1].$hex2[2].$hex2[2];
-                elseif(strlen($hex2) !== 6) $hex2 = 'FFFFFF'; // Fallback
+                $h1 = $clean($hex1); $h2 = $clean($hex2);
+                $r1 = hexdec(substr($h1,0,2)); $g1 = hexdec(substr($h1,2,2)); $b1 = hexdec(substr($h1,4,2));
+                $r2 = hexdec(substr($h2,0,2)); $g2 = hexdec(substr($h2,2,2)); $b2 = hexdec(substr($h2,4,2));
 
-                $r1 = hexdec(substr($hex1,0,2)); $g1 = hexdec(substr($hex1,2,2)); $b1 = hexdec(substr($hex1,4,2));
-                $r2 = hexdec(substr($hex2,0,2)); $g2 = hexdec(substr($hex2,2,2)); $b2 = hexdec(substr($hex2,4,2));
-
-                $totalVol = $vol1 + $vol2;
-                if ($totalVol <= 0) return "#" . $hex1;
-
+                $totalVol = ($vol1 + $vol2) ?: 1;
                 $r = round(($r1 * $vol1 + $r2 * $vol2) / $totalVol);
                 $g = round(($g1 * $vol1 + $g2 * $vol2) / $totalVol);
                 $b = round(($b1 * $vol1 + $b2 * $vol2) / $totalVol);
@@ -123,50 +111,43 @@ if (isset($_GET['action'])) {
                 return sprintf("#%02x%02x%02x", $r, $g, $b);
             };
 
-            // รับค่า ID และปริมาตรจากผู้ใช้
             $id_a = isset($_GET['a']) ? intval($_GET['a']) : 0;
             $id_b = isset($_GET['b']) ? intval($_GET['b']) : 0;
             $vol_a = isset($_GET['volA']) ? floatval($_GET['volA']) : 0;
             $vol_b = isset($_GET['volB']) ? floatval($_GET['volB']) : 0;
 
-            if ($id_a <= 0 || $id_b <= 0) {
-                throw new Exception("กรุณาเลือกสารเคมีให้ถูกต้องทั้ง 2 หลอด");
-            }
+            if ($id_a <= 0 || $id_b <= 0) throw new Exception("ข้อมูลสารไม่ครบถ้วน");
 
-            // ดึงข้อมูลสารเคมีจากตาราง chemicals
-            $stmt = $conn->prepare("SELECT id, name, formula, type, color_neutral, toxicity, state FROM chemicals WHERE id IN (?, ?)");
+            // ดึงข้อมูลสารเคมีแบบละเอียด
+            $stmt = $conn->prepare("SELECT * FROM chemicals WHERE id IN (?, ?)");
             $stmt->bind_param("ii", $id_a, $id_b);
             $stmt->execute();
             $res = $stmt->get_result();
             
             $chemicals = [];
-            while ($row = $res->fetch_assoc()) {
-                $chemicals[$row['id']] = $row;
-            }
+            while ($row = $res->fetch_assoc()) { $chemicals[$row['id']] = $row; }
             $stmt->close();
 
-            if (!isset($chemicals[$id_a])) throw new Exception("ไม่พบข้อมูลสาร A ในคลังข้อมูล");
-            if (!isset($chemicals[$id_b])) throw new Exception("ไม่พบข้อมูลสาร B ในคลังข้อมูล");
+            if (!isset($chemicals[$id_a])) throw new Exception("ไม่พบข้อมูลสารละลาย A");
+            if (!isset($chemicals[$id_b])) throw new Exception("ไม่พบข้อมูลสารละลาย B");
 
-            $cA = $chemicals[$id_a];
-            $cB = $chemicals[$id_b];
+            $cA = $chemicals[$id_a]; $cB = $chemicals[$id_b];
 
-            // 1. คำนวณค่าสถานะเบื้องต้นของการผสม (สมมติว่าไม่มีปฏิกิริยา)
+            // 1. การคำนวณพื้นฐาน (กรณีไม่มีปฏิกิริยา)
             $total_volume = $vol_a + $vol_b;
-            $final_temp = 25.0; // อุณหภูมิห้อง
             $result_color = $mixColorsWeighted($cA['color_neutral'], $vol_a, $cB['color_neutral'], $vol_b);
-            
+            $final_temp = 25.0;
             $product_name = "สารละลายผสม (" . $cA['name'] . " + " . $cB['name'] . ")";
             $product_formula = "-";
             $precipitate = "ไม่มีตะกอน";
             $gas_result = "ไม่มีแก๊ส";
-            $damage_player = round(($cA['toxicity'] + $cB['toxicity']) / 2); // คำนวณพิษเฉลี่ย
+            $damage_player = round(($cA['toxicity'] + $cB['toxicity']) / 2);
             $effect_type = "normal";
             $final_state = "liquid";
             $has_bubbles = false;
             $bubble_color = "#FFFFFF";
 
-            // 2. ตรวจสอบว่ามีสูตรปฏิกิริยาพิเศษใน Database หรือไม่ (เช็คแบบสลับตำแหน่ง A,B และ B,A)
+            // 2. ค้นหาปฏิกิริยาเคมีในตาราง reactions
             $stmt2 = $conn->prepare("SELECT * FROM reactions WHERE (chem1_id=? AND chem2_id=?) OR (chem1_id=? AND chem2_id=?) LIMIT 1");
             $stmt2->bind_param("iiii", $id_a, $id_b, $id_b, $id_a);
             $stmt2->execute();
@@ -174,7 +155,6 @@ if (isset($_GET['action'])) {
             $stmt2->close();
 
             if ($react) {
-                // อัปเดตข้อมูลผลิตภัณฑ์จากตาราง reactions
                 if (!empty($react['product_name'])) $product_name = $react['product_name'];
                 if (!empty($react['result_color'])) $result_color = $react['result_color'];
                 if (!empty($react['result_precipitate']) && $react['result_precipitate'] !== 'ไม่มีตะกอน') $precipitate = $react['result_precipitate'];
@@ -182,32 +162,28 @@ if (isset($_GET['action'])) {
                 if (!empty($react['result_gas']) && $react['result_gas'] !== 'ไม่มีแก๊ส') {
                     $gas_result = $react['result_gas'];
                     $has_bubbles = true;
-                    if (!empty($react['gas_color'])) $bubble_color = $react['gas_color'];
+                    $bubble_color = $react['gas_color'] ?: "#FFFFFF";
                 }
 
                 $final_temp += floatval($react['heat_level']);
-                if ($final_temp >= 100) $final_state = 'gas'; // เดือดกลายเป็นไอ
-                
-                $damage_player += intval($react['toxicity_bonus']); // โดนดาเมจพิษเพิ่ม
+                $damage_player += intval($react['toxicity_bonus']);
                 
                 if ($react['is_explosive']) {
                     $effect_type = "explosion";
-                    $result_color = "#222222"; // สีดำเขม่าควัน
-                    $damage_player = 100; // ระเบิด ดาเมจเต็ม 100
-                    $product_name .= " (💥 เกิดการระเบิดอย่างรุนแรง)";
-                } elseif ($damage_player >= 50 && $final_state === 'gas') {
-                    // หากมีพิษสูงและฟุ้งกระจายเป็นแก๊ส ถือว่าเป็น Event แก๊สพิษ
+                    $damage_player = 100;
+                    $result_color = "#222222";
+                } elseif ($damage_player >= 50 && $final_temp > 60) {
                     $effect_type = "toxic_gas";
                 }
+
+                if ($final_temp >= 100) $final_state = "gas";
             } else {
-                // กรณีนักเรียนผสมสารชนิดเดียวกัน (เท A ลง A)
-                if ($id_a == $id_b) {
+                if ($id_a === $id_b) {
                     $product_name = $cA['name'];
                     $product_formula = $cA['formula'] ?? "-";
                 }
             }
 
-            // ส่งข้อมูลกลับไปให้ Frontend ไปเล่นแอนิเมชัน 3D และ UI
             echo json_encode([
                 "success" => true,
                 "product_name" => $product_name,
@@ -231,1168 +207,526 @@ if (isset($_GET['action'])) {
     } catch (Exception $e) {
         http_response_code(500);
         echo json_encode(["success" => false, "error" => $e->getMessage()]);
+        exit;
     }
-    exit;
 }
 
 // ===================================================================================
-// [PART 2] FRONTEND UI & QUEST BOARD (หน้าตาและระบบเควสต์)
+// [PART 2] UI DATA PREPARATION (เตรียมข้อมูลหน้าเว็บ)
 // ===================================================================================
 
-// กำหนดปุ่มย้อนกลับให้ตรงกับ Role ปัจจุบัน
+// กำหนด Dashboard Link
 $dashboard_link = "index.php";
-if ($role === 'student') {
-    $dashboard_link = "dashboard_student.php";
-} elseif ($role === 'teacher') {
-    $dashboard_link = "dashboard_teacher.php";
-} elseif ($role === 'developer' || $role === 'admin') {
-    $dashboard_link = "dashboard_dev.php";
-} elseif ($role === 'parent') {
-    $dashboard_link = "dashboard_parent.php";
-}
+if ($role === 'student') $dashboard_link = "dashboard_student.php";
+elseif ($role === 'teacher') $dashboard_link = "dashboard_teacher.php";
+elseif ($role === 'developer' || $role === 'admin') $dashboard_link = "dashboard_dev.php";
+elseif ($role === 'parent') $dashboard_link = "dashboard_parent.php";
 
+// ดึงข้อมูลเควสต์ (Quest Board)
 $quests = [];
-
 if ($role === 'student' && !empty($class_level)) {
     $stmt = $conn->prepare("
-        SELECT q.id, q.title, q.description, q.xp_reward, q.gold_reward, 
-               c.name AS target_chem_name,
-               IFNULL(sqp.status, 'pending') AS status
+        SELECT q.id, q.title, q.description, q.xp_reward, q.gold_reward, c.name AS target_chem_name, IFNULL(sqp.status, 'pending') AS status
         FROM quests q
         LEFT JOIN chemicals c ON q.target_chem_id = c.id
         LEFT JOIN student_quest_progress sqp ON sqp.quest_id = q.id AND sqp.student_id = ?
-        WHERE q.assigned_class = ?
-        ORDER BY q.created_at DESC
+        WHERE q.assigned_class = ? ORDER BY q.created_at DESC
     ");
-    if ($stmt) {
-        $stmt->bind_param("is", $user_id, $class_level);
-        $stmt->execute();
-        $res = $stmt->get_result();
-        while ($row = $res->fetch_assoc()) {
-            $quests[] = $row;
-        }
-        $stmt->close();
-    }
-} else if ($role === 'teacher') {
-    $stmt = $conn->prepare("
-        SELECT q.id, q.title, q.description, q.xp_reward, q.gold_reward, 
-               c.name AS target_chem_name,
-               'teacher_preview' AS status
-        FROM quests q
-        LEFT JOIN chemicals c ON q.target_chem_id = c.id
-        WHERE q.teacher_id = ?
-        ORDER BY q.created_at DESC
-    ");
-    if ($stmt) {
-        $stmt->bind_param("i", $user_id);
-        $stmt->execute();
-        $res = $stmt->get_result();
-        while ($row = $res->fetch_assoc()) {
-            $quests[] = $row;
-        }
-        $stmt->close();
-    }
+    $stmt->bind_param("is", $user_id, $class_level);
+    $stmt->execute();
+    $quests = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+    $stmt->close();
+} elseif ($role === 'teacher') {
+    $stmt = $conn->prepare("SELECT q.*, c.name AS target_chem_name, 'teacher_preview' AS status FROM quests q LEFT JOIN chemicals c ON q.target_chem_id = c.id WHERE q.teacher_id = ? ORDER BY q.created_at DESC");
+    $stmt->bind_param("i", $user_id);
+    $stmt->execute();
+    $quests = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+    $stmt->close();
 }
-?>
 
+?>
 <!DOCTYPE html>
 <html lang="th">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Ultimate Chemistry Lab Survival</title>
+    <title>Ultimate Chemistry Lab Survival (v.Full)</title>
 
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Itim&display=swap" rel="stylesheet">
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🧪</text></svg>">
-
     <link href="https://cdn.jsdelivr.net/npm/tom-select@2.2.2/dist/css/tom-select.bootstrap5.min.css" rel="stylesheet">
-
+    
     <style>
-        /* --- CSS หลักของหน้า Lab --- */
+        /* ===========================================================================
+           CSS CORE - จัดเต็มทุกรายละเอียด
+           =========================================================================== */
+        :root {
+            --primary: #6366f1;
+            --primary-hover: #4f46e5;
+            --danger: #ef4444;
+            --success: #10b981;
+            --bg-dark: #0f172a;
+            --panel-bg: rgba(15, 23, 42, 0.85);
+        }
+
         body {
             font-family: 'Itim', cursive;
-            margin: 0; 
-            padding: 0; 
-            min-height: 100vh;
-            background-image: url('images_bg.png'); 
-            background-color: #1e293b; 
+            margin: 0; padding: 0;
+            background: url('images_bg.png') no-repeat center center fixed;
             background-size: cover;
-            background-position: center;
-            background-attachment: fixed;
-            display: flex;
-            justify-content: center;
-            align-items: flex-start;
-            padding-top: 50px;
+            background-color: var(--bg-dark);
+            color: #334155;
+            min-height: 100vh;
+            display: flex; justify-content: center; align-items: flex-start;
+            padding-top: 40px;
             overflow-x: hidden;
         }
 
         .container {
-            width: 90%; 
-            max-width: 850px;
+            width: 90%; max-width: 900px;
             background: rgba(255, 255, 255, 0.95);
-            padding: 25px; 
-            border-radius: 16px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-            position: relative; 
-            z-index: 10;
+            padding: 30px; border-radius: 24px;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+            position: relative; z-index: 10;
             backdrop-filter: blur(10px);
-            margin-bottom: 50px;
+            margin-bottom: 60px;
         }
 
-        h2 { 
-            margin-top: 0; 
-            margin-bottom: 10px; 
-            color: #1e293b; 
-            text-align: center; 
-            font-size: 28px;
-            text-shadow: 1px 1px 0px #fff;
-        }
-
+        /* --- Header & Navigation --- */
+        h2 { text-align: center; color: var(--bg-dark); font-size: 32px; margin-bottom: 20px; text-shadow: 1px 1px 2px rgba(0,0,0,0.1); }
         .btn-back {
-            display: block;
-            width: fit-content;
-            margin: 0 auto 20px auto;
-            padding: 8px 25px;
-            background: #ef4444;
-            color: white;
-            text-decoration: none;
-            border-radius: 20px;
-            font-size: 16px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-            transition: transform 0.2s, background 0.2s;
-            border: 2px solid rgba(255,255,255,0.5);
+            display: block; width: fit-content; margin: 0 auto 25px;
+            padding: 10px 25px; background: var(--danger); color: white;
+            text-decoration: none; border-radius: 50px;
+            font-weight: bold; transition: all 0.3s ease;
+            box-shadow: 0 4px 10px rgba(239, 68, 68, 0.3);
         }
+        .btn-back:hover { transform: translateY(-2px); background: #dc2626; box-shadow: 0 6px 15px rgba(239, 68, 68, 0.4); }
 
-        .btn-back:hover { 
-            transform: scale(1.05); 
-            background: #dc2626; 
-            color: white; 
-        }
-
-        .control-group { 
-            display: grid; 
-            grid-template-columns: 1fr 1fr; 
-            gap: 20px; 
-            margin-bottom: 20px; 
-        }
-
+        /* --- Input Controls --- */
+        .control-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 25px; margin-bottom: 30px; }
         .input-wrapper {
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-            background: rgba(241, 245, 249, 0.8);
-            padding: 15px;
-            border-radius: 12px;
-            border: 1px solid #cbd5e1;
+            background: #f8fafc; padding: 20px; border-radius: 18px;
+            border: 1px solid #e2e8f0; transition: border-color 0.3s;
         }
-
-        .input-wrapper label {
-            font-weight: bold;
-            color: #334155;
-        }
-
-        .chem-selector-row {
-            display: flex;
-            gap: 5px;
-            align-items: stretch;
-        }
-
-        .ts-wrapper {
-            flex-grow: 1; 
-        }
+        .input-wrapper:focus-within { border-color: var(--primary); }
+        .input-wrapper label { font-weight: bold; color: #475569; display: block; margin-bottom: 12px; }
         
+        .chem-selector-row { display: flex; gap: 8px; }
         .btn-periodic-trigger {
-            background: #475569;
-            color: white; 
-            border: none; 
-            border-radius: 8px;
-            padding: 0 10px; 
-            cursor: pointer; 
-            font-size: 14px;
-            white-space: nowrap; 
-            transition: background 0.2s;
-            display: flex; 
-            align-items: center;
+            background: #475569; color: white; border: none; border-radius: 10px;
+            padding: 0 12px; cursor: pointer; transition: background 0.2s;
+            font-size: 14px; white-space: nowrap;
+        }
+        .btn-periodic-trigger:hover { background: #334155; }
+
+        input[type="number"] {
+            width: 100%; padding: 12px; margin-top: 10px;
+            border: 2px solid #cbd5e1; border-radius: 10px;
+            box-sizing: border-box; font-family: 'Itim';
         }
 
-        .btn-periodic-trigger:hover { 
-            background: #334155; 
-        }
-        
-        select, input, button {
-            font-family: 'Itim', cursive; 
-            width: 100%; 
-            padding: 12px;
-            border: 2px solid #cbd5e1; 
-            border-radius: 8px; 
-            font-size: 16px; 
-            box-sizing: border-box;
-            background: #fff;
-        }
-
-        button#mix-button {
+        /* --- Mix Button --- */
+        #mix-button {
+            width: 100%; padding: 20px; border: none; border-radius: 18px;
             background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
-            color: white; 
-            border: none; 
-            cursor: pointer; 
-            font-size: 20px; 
-            font-weight: bold;
-            transition: transform 0.2s, box-shadow 0.2s;
-            box-shadow: 0 4px 15px rgba(168, 85, 247, 0.4);
-            padding: 15px;
-            border-radius: 12px;
-            margin-top: 10px;
+            color: white; font-size: 26px; font-weight: bold; cursor: pointer;
+            box-shadow: 0 10px 25px rgba(168, 85, 247, 0.4);
+            transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            font-family: 'Itim';
         }
+        #mix-button:hover:not(:disabled) { transform: translateY(-4px); box-shadow: 0 15px 35px rgba(168, 85, 247, 0.5); }
+        #mix-button:active { transform: translateY(2px); }
+        #mix-button:disabled { background: #94a3b8; cursor: not-allowed; box-shadow: none; transform: none; }
 
-        button#mix-button:hover { 
-            transform: translateY(-2px); 
-            box-shadow: 0 6px 20px rgba(168, 85, 247, 0.6); 
-        }
-
-        button#mix-button:active { 
-            transform: translateY(1px); 
-        }
-
-        button:disabled { 
-            background: #94a3b8; 
-            cursor: not-allowed; 
-            transform: none; 
-            box-shadow: none; 
-        }
-
+        /* --- Visual Area (3D & Result) --- */
         #viewer3d {
-            height: 400px; 
-            width: 100%;
-            background: radial-gradient(circle, #f8fafc 0%, #e2e8f0 100%);
-            border-radius: 12px; 
-            border: 2px dashed #94a3b8;
-            position: relative; 
-            overflow: hidden; 
-            margin-top: 25px;
-            box-shadow: inset 0 2px 10px rgba(0,0,0,0.05);
+            width: 100%; height: 450px; background: radial-gradient(circle, #f8fafc 0%, #cbd5e1 100%);
+            border-radius: 20px; border: 3px dashed #94a3b8; margin-top: 30px;
+            position: relative; overflow: hidden; box-shadow: inset 0 5px 20px rgba(0,0,0,0.05);
         }
 
         #result-box {
-            margin-top: 25px; 
-            padding: 20px;
-            background: #f8fafc; 
-            border-radius: 12px; 
-            border-left: 6px solid #a855f7;
-            font-size: 16px; 
-            line-height: 1.6;
-            display: none; 
-            animation: fadeIn 0.5s ease;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+            margin-top: 30px; padding: 25px; border-radius: 20px;
+            background: #ffffff; border-left: 10px solid var(--primary);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.05); display: none;
+            animation: slideUp 0.5s ease-out;
         }
+        @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
 
-        @keyframes fadeIn { 
-            from { opacity: 0; transform: translateY(10px); } 
-            to { opacity: 1; transform: translateY(0); } 
-        }
-        
-        .res-row { 
-            display: flex; 
-            justify-content: space-between; 
-            border-bottom: 1px dashed #cbd5e1; 
-            padding: 8px 0; 
-        }
+        .res-row { display: flex; justify-content: space-between; padding: 12px 0; border-bottom: 1px dashed #e2e8f0; }
+        .res-row:last-child { border-bottom: none; }
+        .res-label { color: #64748b; font-size: 16px; }
+        .res-val { color: var(--primary); font-weight: bold; font-size: 18px; }
 
-        .res-row:last-child { 
-            border-bottom: none; 
-        }
-
-        .res-val { 
-            font-weight: bold; 
-            color: #4f46e5; 
-        }
-
-        /* --- CSS แถบสถานะฝั่งขวา --- */
-        .status-panel {
-            position: fixed; 
-            top: 20px; 
-            right: 20px; 
-            width: 260px;
-            background: rgba(15, 23, 42, 0.85); 
-            padding: 15px; 
-            border-radius: 12px;
-            color: white; 
-            z-index: 1000; 
-            box-shadow: 0 5px 15px rgba(0,0,0,0.5); 
-            backdrop-filter: blur(8px);
+        /* --- Side Panels --- */
+        .side-panel {
+            position: fixed; width: 280px; padding: 20px;
+            background: var(--panel-bg); border-radius: 20px;
+            color: white; z-index: 100; backdrop-filter: blur(12px);
             border: 1px solid rgba(255,255,255,0.1);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
         }
+        .quest-panel { left: 20px; top: 20px; max-height: 85vh; overflow-y: auto; }
+        .status-panel { right: 20px; top: 20px; }
 
-        .bar-row { 
-            margin-bottom: 12px; 
+        .quest-card {
+            background: rgba(255,255,255,0.08); padding: 15px; border-radius: 12px;
+            margin-bottom: 15px; border-left: 4px solid #3b82f6; transition: 0.3s;
         }
+        .quest-card:hover { background: rgba(255,255,255,0.12); transform: translateX(5px); }
 
-        .bar-label { 
-            font-size: 14px; 
-            margin-bottom: 6px; 
-            display: flex; 
-            justify-content: space-between; 
-            font-weight: bold;
-        }
+        .status-bar-container { margin-bottom: 15px; }
+        .bar-label { display: flex; justify-content: space-between; font-size: 14px; margin-bottom: 6px; }
+        .bar-outer { width: 100%; height: 14px; background: #1e293b; border-radius: 10px; overflow: hidden; border: 1px solid #334155; }
+        .bar-inner { height: 100%; width: 100%; transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1); }
 
-        .progress-track { 
-            width: 100%; 
-            height: 14px; 
-            background: #334155; 
-            border-radius: 8px; 
-            overflow: hidden; 
-            border: 1px solid #1e293b; 
-        }
+        /* --- Overlays --- */
+        #broken-overlay { position: fixed; inset: 0; background: url('https://upload.wikimedia.org/wikipedia/commons/thumb/4/4e/Broken_glass.png/800px-Broken_glass.png'); background-size: cover; opacity: 0; pointer-events: none; z-index: 1000; transition: opacity 0.1s; mix-blend-mode: screen; }
+        #toxic-overlay { position: fixed; inset: 0; background: radial-gradient(circle, transparent 20%, rgba(34, 197, 94, 0.6) 90%); opacity: 0; pointer-events: none; z-index: 999; transition: opacity 1.5s ease; mix-blend-mode: multiply; }
 
-        .progress-fill { 
-            height: 100%; 
-            width: 100%; 
-            transition: width 0.5s ease, background-color 0.5s ease; 
-        }
-
-        #beaker-bar { 
-            background: #38bdf8; 
-            box-shadow: 0 0 10px rgba(56,189,248,0.5); 
-        }
-
-        #health-bar { 
-            background: #4ade80; 
-            box-shadow: 0 0 10px rgba(74,222,128,0.5); 
-        }
-
-        button.reset-btn {
-            background: #ef4444; 
-            color: white; 
-            border: none; 
-            margin-top: 10px; 
-            font-size: 15px; 
-            padding: 10px; 
-            width: 100%; 
-            cursor: pointer; 
-            border-radius: 8px; 
-            font-weight: bold; 
-            transition: background 0.2s;
-        }
-
-        button.reset-btn:hover { 
-            background: #dc2626; 
-        }
-
-        /* --- CSS กระดานภารกิจ ฝั่งซ้าย --- */
-        .quest-panel {
-            position: fixed; 
-            top: 20px; 
-            left: 20px; 
-            width: 280px;
-            background: rgba(15, 23, 42, 0.85); 
-            padding: 15px; 
-            border-radius: 12px;
-            color: white; 
-            z-index: 1000; 
-            box-shadow: 0 5px 15px rgba(0,0,0,0.5); 
-            backdrop-filter: blur(8px);
-            max-height: 90vh; 
-            overflow-y: auto;
-            border: 1px solid rgba(255,255,255,0.1);
-        }
-
-        .quest-panel::-webkit-scrollbar { 
-            width: 6px; 
-        }
-
-        .quest-panel::-webkit-scrollbar-thumb { 
-            background: #475569; 
-            border-radius: 3px; 
-        }
-        
-        .quest-panel h3 { 
-            margin-top: 0; 
-            color: #fde047; 
-            font-size: 20px; 
-            border-bottom: 1px solid #334155; 
-            padding-bottom: 10px; 
-            display: flex; 
-            align-items: center; 
-            gap: 8px;
-        }
-
-        .quest-card { 
-            background: rgba(255,255,255,0.05); 
-            border-radius: 8px; 
-            padding: 12px; 
-            margin-bottom: 12px; 
-            border: 1px solid #334155; 
-            transition: transform 0.2s; 
-        }
-
-        .quest-card:hover { 
-            transform: translateX(5px); 
-            background: rgba(255,255,255,0.08); 
-        }
-
-        .quest-title { 
-            font-weight: bold; 
-            font-size: 16px; 
-            color: #60a5fa; 
-            margin-bottom: 6px; 
-        }
-
-        .quest-desc { 
-            font-size: 13px; 
-            color: #cbd5e1; 
-            margin-bottom: 10px; 
-            line-height: 1.4; 
-        }
-
-        .quest-target { 
-            font-size: 14px; 
-            font-weight: bold; 
-            color: #34d399; 
-            margin-bottom: 6px; 
-        }
-
-        .quest-rewards { 
-            font-size: 13px; 
-            color: #fbbf24; 
-            margin-bottom: 10px; 
-            font-weight: bold; 
-        }
-
-        .quest-badge { 
-            display: inline-block; 
-            padding: 4px 10px; 
-            border-radius: 12px; 
-            font-size: 12px; 
-            font-weight: bold; 
-        }
-
-        .quest-badge.completed { 
-            background: rgba(16, 185, 129, 0.2); 
-            color: #34d399; 
-            border: 1px solid #10b981; 
-        }
-
-        .quest-badge.pending { 
-            background: rgba(245, 158, 11, 0.2); 
-            color: #fbbf24; 
-            border: 1px solid #f59e0b; 
-        }
-
-        .quest-badge.teacher_preview { 
-            background: rgba(99, 102, 241, 0.2); 
-            color: #818cf8; 
-            border: 1px solid #6366f1; 
-        }
-
-        .ts-dropdown { 
-            z-index: 99999 !important; 
-            font-family: 'Itim', cursive; 
-        }
-
-        /* --- CSS Effect หน้าจอแตก/พิษ --- */
-        #broken-overlay {
-            position: fixed; 
-            top: 0; 
-            left: 0; 
-            width: 100%; 
-            height: 100%;
-            background-image: url('https://upload.wikimedia.org/wikipedia/commons/thumb/4/4e/Broken_glass.png/800px-Broken_glass.png'); 
-            background-size: cover; 
-            pointer-events: none; 
-            opacity: 0; 
-            transition: opacity 0.1s; 
-            z-index: 9999; 
-            mix-blend-mode: multiply;
-        }
-
-        #toxic-overlay {
-            position: fixed; 
-            top: 0; 
-            left: 0; 
-            width: 100%; 
-            height: 100%;
-            background: radial-gradient(circle, transparent 20%, rgba(34, 197, 94, 0.7) 90%);
-            pointer-events: none; 
-            opacity: 0; 
-            transition: opacity 1.5s ease; 
-            z-index: 9998; 
-            mix-blend-mode: hard-light;
-        }
-
-        .shake { 
-            animation: shake 0.5s cubic-bezier(.36,.07,.19,.97) both; 
-        }
-
-        @keyframes shake {
-            10%, 90% { transform: translate3d(-4px, 0, 0); }
-            20%, 80% { transform: translate3d(6px, 0, 0); }
-            30%, 50%, 70% { transform: translate3d(-8px, 0, 0); }
-            40%, 60% { transform: translate3d(8px, 0, 0); }
-        }
-
-        /* =========================================
-           CSS สำหรับ Modal ตารางธาตุ
-           ========================================= */
-        .periodic-modal-overlay {
-            display: none; 
-            position: fixed; 
-            top: 0; 
-            left: 0; 
-            width: 100%; 
-            height: 100%;
-            background-color: rgba(15, 23, 42, 0.9); 
-            z-index: 10000;
-            justify-content: center; 
-            align-items: center; 
-            padding: 20px; 
-            box-sizing: border-box; 
-            overflow: auto;
-            backdrop-filter: blur(5px);
-        }
-
-        .periodic-modal-content {
-            background-color: #1e293b; 
-            color: #f8fafc; 
-            padding: 30px; 
-            border-radius: 16px;
-            width: 100%; 
-            max-width: 1250px; 
-            box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5); 
-            position: relative; 
-            overflow-x: auto;
-            border: 1px solid #334155;
-        }
-
-        .periodic-close-btn {
-            position: absolute; 
-            top: 15px; 
-            right: 25px; 
-            color: #f87171; 
-            font-size: 32px; 
-            font-weight: bold; 
-            cursor: pointer; 
-            transition: color 0.2s;
-        }
-
-        .periodic-close-btn:hover { 
-            color: #ef4444; 
-        }
-
-        .periodic-modal-title { 
-            text-align: center; 
-            margin-top: 0; 
-            margin-bottom: 10px; 
-            font-size: 28px; 
-            color: #e2e8f0; 
-        }
+        /* --- Periodic Table Modal --- */
+        .modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.85); z-index: 10000; justify-content: center; align-items: center; padding: 20px; backdrop-filter: blur(5px); }
+        .modal-content { background: #1e293b; width: 95%; max-width: 1200px; border-radius: 24px; padding: 30px; position: relative; max-height: 90vh; overflow: auto; border: 1px solid #334155; }
+        .close-btn { position: absolute; right: 25px; top: 15px; font-size: 35px; color: var(--danger); cursor: pointer; }
 
         .periodic-grid {
-            display: grid; 
-            grid-template-columns: repeat(18, minmax(50px, 1fr));
-            grid-template-rows: repeat(7, minmax(50px, auto)) 20px repeat(2, minmax(50px, auto)); 
-            gap: 4px; 
-            padding: 10px 0; 
-            user-select: none;
+            display: grid; grid-template-columns: repeat(18, 1fr); gap: 4px; padding: 15px 0;
         }
-
         .element-cell {
-            border: 1px solid rgba(255,255,255,0.1); 
-            border-radius: 4px; 
-            padding: 2px; 
-            display: flex; 
-            flex-direction: column;
-            justify-content: center; 
-            align-items: center; 
-            cursor: pointer; 
-            transition: all 0.2s;
-            aspect-ratio: 1 / 1; 
-            position: relative; 
-            background-color: #334155;
+            aspect-ratio: 1/1; border-radius: 6px; display: flex; flex-direction: column;
+            justify-content: center; align-items: center; cursor: pointer; transition: 0.2s;
+            font-size: 12px; position: relative; background: #334155; color: white;
+            border: 1px solid rgba(255,255,255,0.1);
         }
+        .element-cell:hover { transform: scale(1.3); z-index: 100; box-shadow: 0 0 15px white; border-color: white; }
+        .atom-num { position: absolute; top: 2px; left: 4px; font-size: 8px; opacity: 0.7; }
+        .atom-sym { font-weight: bold; font-size: 16px; }
 
-        .element-cell:hover { 
-            transform: scale(1.2); 
-            z-index: 10; 
-            box-shadow: 0 0 20px rgba(255,255,255,0.4); 
-            border-color: #fff; 
-        }
+        /* สีธาตุ */
+        .cat-nonmetal { background: #3b82f6; }
+        .cat-noble-gas { background: #a855f7; }
+        .cat-alkali { background: #ef4444; }
+        .cat-alkaline { background: #f97316; }
+        .cat-metalloid { background: #06b6d4; }
+        .cat-halogen { background: #8b5cf6; }
+        .cat-transition { background: #eab308; color: black; }
+        .cat-post-transition { background: #10b981; }
+        .cat-lanthanide { background: #f472b6; color: black; }
+        .cat-actinide { background: #fb7185; color: black; }
 
-        .atom-num { 
-            font-size: 10px; 
-            position: absolute; 
-            top: 2px; 
-            left: 4px; 
-            opacity: 0.6; 
-        }
-
-        .atom-sym { 
-            font-size: 18px; 
-            font-weight: bold; 
-        }
-
-        .atom-name { 
-            font-size: 9px; 
-            white-space: nowrap; 
-            overflow: hidden; 
-            text-overflow: ellipsis; 
-            max-width: 95%; 
-            opacity: 0.8;
-        }
-
-        .empty-cell { 
-            pointer-events: none; 
-            border: none; 
-            background: transparent; 
-        }
-
-        /* สีตามกลุ่มธาตุ อิงตามมาตรฐานเคมี */
-        .cat-alkali { background-color: #ef4444; color: white; }
-        .cat-alkaline-earth { background-color: #f97316; color: white; }
-        .cat-transition { background-color: #eab308; color: black; }
-        .cat-post-transition { background-color: #84cc16; color: black; }
-        .cat-metalloid { background-color: #06b6d4; color: black; }
-        .cat-nonmetal { background-color: #3b82f6; color: white; }
-        .cat-halogen { background-color: #8b5cf6; color: white; }
-        .cat-noble-gas { background-color: #d946ef; color: white; }
-        .cat-lanthanide { background-color: #f472b6; color: black; }
-        .cat-actinide { background-color: #c084fc; color: black; }
-
-        /* Media Queries สำหรับหน้าจอเล็ก */
-        @media (max-width: 1100px) {
-            .quest-panel, .status-panel { display: none; }
-        }
+        @media (max-width: 1250px) { .side-panel { display: none; } }
     </style>
 </head>
 <body>
 
-<div class="quest-panel">
-    <h3>📜 ภารกิจเคมีประจำแล็บ</h3>
+<div id="broken-overlay"></div>
+<div id="toxic-overlay"></div>
+
+<div class="side-panel quest-panel">
+    <h3 style="color: #fde047; margin-top: 0; border-bottom: 2px solid rgba(255,255,255,0.1); padding-bottom: 10px;">📜 ภารกิจเคมี</h3>
     <?php if (empty($quests)): ?>
-        <p style="color:#64748b; font-size:14px; text-align:center; padding: 20px 0;">ยังไม่มีภารกิจให้ทำในขณะนี้</p>
+        <p style="text-align:center; color: #94a3b8; padding: 20px;">ไม่มีภารกิจในขณะนี้</p>
     <?php else: ?>
         <?php foreach ($quests as $q): ?>
             <div class="quest-card">
-                <div class="quest-title"><?= htmlspecialchars($q['title']) ?></div>
-                <div class="quest-desc"><?= htmlspecialchars($q['description']) ?></div>
-                <div class="quest-target">🎯 สร้าง: <?= htmlspecialchars($q['target_chem_name'] ?? 'ไม่ระบุ') ?></div>
-                <div class="quest-rewards">
-                    ✨ <?= $q['xp_reward'] ?> XP &nbsp;|&nbsp; 💰 <?= $q['gold_reward'] ?> Gold
-                </div>
-                <?php if($q['status'] === 'completed'): ?>
-                    <div class="quest-badge completed">✅ สำเร็จแล้ว</div>
-                <?php else if($q['status'] === 'teacher_preview'): ?>
-                    <div class="quest-badge teacher_preview">👀 มุมมองครู (Preview)</div>
-                <?php else: ?>
-                    <div class="quest-badge pending">⏳ กำลังดำเนินการ</div>
-                <?php endif; ?>
+                <div style="font-weight: bold; color: #60a5fa;"><?= htmlspecialchars($q['title']) ?></div>
+                <div style="font-size: 13px; color: #cbd5e1; margin: 5px 0;"><?= htmlspecialchars($q['description']) ?></div>
+                <div style="font-size: 14px; font-weight: bold; color: #34d399;">🎯 สร้าง: <?= htmlspecialchars($q['target_chem_name'] ?? 'ไม่ระบุ') ?></div>
+                <div style="font-size: 12px; color: #fbbf24; margin-top: 5px;">💰 <?= $q['gold_reward'] ?> Gold | ✨ <?= $q['xp_reward'] ?> XP</div>
+                <div style="margin-top: 8px; font-size: 11px;"><?= $q['status'] === 'completed' ? '✅ สำเร็จ' : '⏳ กำลังทำ' ?></div>
             </div>
         <?php endforeach; ?>
     <?php endif; ?>
 </div>
 
-<div class="status-panel">
-    <div class="bar-row">
-        <span class="bar-label">🧊 ความทนทานบีกเกอร์ <span id="text-beaker">100%</span></span>
-        <div class="progress-track"><div id="beaker-bar" class="progress-fill" style="width: 100%;"></div></div>
+<div class="side-panel status-panel">
+    <h3 style="color: #60a5fa; margin-top: 0;">📊 สถานะปัจจุบัน</h3>
+    <div class="status-bar-container">
+        <div class="bar-label"><span>❤️ พลังชีวิต</span> <span id="hp-text">100%</span></div>
+        <div class="bar-outer"><div id="hp-bar" class="bar-inner" style="background: #4ade80; width: 100%;"></div></div>
     </div>
-    <div class="bar-row">
-        <span class="bar-label">❤️ สุขภาพร่างกาย <span id="text-health">100%</span></span>
-        <div class="progress-track"><div id="health-bar" class="progress-fill" style="width: 100%;"></div></div>
+    <div class="status-bar-container">
+        <div class="bar-label"><span>🧊 ความทนทานบีกเกอร์</span> <span id="beaker-text">100%</span></div>
+        <div class="bar-outer"><div id="beaker-bar" class="bar-inner" style="background: #38bdf8; width: 100%;"></div></div>
     </div>
-    <button class="reset-btn" id="btn-reset-all">🔄 เบิกอุปกรณ์ใหม่ (Reset)</button>
+    <button onclick="location.reload()" style="width: 100%; padding: 12px; background: var(--danger); color: white; border: none; border-radius: 12px; cursor: pointer; font-family: 'Itim'; font-weight: bold;">🔄 เบิกอุปกรณ์ใหม่</button>
 </div>
-
-<div id="broken-overlay"></div>
-<div id="toxic-overlay"></div>
 
 <div class="container">
     <h2>🧪 Ultimate Chemistry Lab</h2>
-    
-    <a href="<?= htmlspecialchars($dashboard_link) ?>" class="btn-back">⬅ กลับ Dashboard</a>
+    <a href="<?= htmlspecialchars($dashboard_link) ?>" class="btn-back">⬅ กลับสู่หน้าแดชบอร์ด</a>
 
-    <div class="control-group">
+    <div class="control-grid">
         <div class="input-wrapper">
-            <label>สารเคมี A (สารตั้งต้น):</label>
+            <label>🧪 สารละลาย A (หลัก):</label>
             <div class="chem-selector-row">
-                <select id="chemicalA" placeholder="ค้นหาชื่อสารเคมี หรือ ธาตุ..."></select>
-                <button class="btn-periodic-trigger" onclick="openPeriodicTable('A')">📅 ตารางธาตุ</button>
+                <select id="chemA" placeholder="ค้นหาสารเคมี..."></select>
+                <button class="btn-periodic-trigger" onclick="openPeriodic('A')">ตารางธาตุ</button>
             </div>
-            <input type="number" id="volA" value="50" min="1" max="1000" placeholder="ปริมาตร (ml)" style="margin-top: 5px;">
+            <input type="number" id="volA" value="50" min="1" max="1000" placeholder="ปริมาตร (mL)">
         </div>
 
         <div class="input-wrapper">
-            <label>สารเคมี B (ตัวทำปฏิกิริยา):</label>
+            <label>🧪 สารละลาย B (ตัวเติม):</label>
             <div class="chem-selector-row">
-                 <select id="chemicalB" placeholder="ค้นหาชื่อสารเคมี หรือ ธาตุ..."></select>
-                 <button class="btn-periodic-trigger" onclick="openPeriodicTable('B')">📅 ตารางธาตุ</button>
+                <select id="chemB" placeholder="ค้นหาสารเคมี..."></select>
+                <button class="btn-periodic-trigger" onclick="openPeriodic('B')">ตารางธาตุ</button>
             </div>
-            <input type="number" id="volB" value="50" min="1" max="1000" placeholder="ปริมาตร (ml)" style="margin-top: 5px;">
+            <input type="number" id="volB" value="50" min="1" max="1000" placeholder="ปริมาตร (mL)">
         </div>
     </div>
 
     <button id="mix-button">⚗️ ผสมสารเคมี (Mix It!)</button>
 
     <div id="viewer3d">
-        <div id="viewer3d-fallback" style="text-align:center; padding-top: 180px; color: #94a3b8;">
-            กำลังโหลดโมเดล 3D...<br><span style="font-size:12px;">(หากระบบไม่โหลดภาพ 3D กรุณาตรวจสอบไฟล์ js/3d_engine.js)</span>
+        <div id="viewer3d-fallback" style="text-align:center; padding-top:200px; color:#94a3b8;">
+            <div style="font-size: 40px;">⚗️</div>
+            กำลังเชื่อมต่อ 3D Engine...
         </div>
     </div>
 
     <div id="result-box">
-        <div class="res-row"><span>📦 ผลิตภัณฑ์ที่ได้:</span> <span id="res-product" class="res-val">-</span></div>
-        <div class="res-row"><span>📝 สูตรเคมี:</span> <span id="res-formula" class="res-val">-</span></div>
-        <div class="res-row"><span>🌡️ อุณหภูมิ:</span> <span id="res-temp" class="res-val">-</span></div>
-        <div class="res-row"><span>🎨 สีสารละลาย:</span> <span id="res-color" class="res-val">-</span></div>
-        <div class="res-row"><span>💧 สถานะ:</span> <span id="res-state" class="res-val">-</span></div>
-        <div class="res-row"><span>🧱 ตะกอน:</span> <span id="res-precipitate" class="res-val">-</span></div>
-        <div class="res-row"><span>☁️ แก๊สที่เกิด:</span> <span id="res-gas" class="res-val">-</span></div>
-        <div style="margin-top: 12px; font-size: 0.9em; text-align: right; color: #64748b;">
-            ปริมาตรรวม: <span id="res-volume">0</span> mL
-        </div>
+        <div class="res-row"><span class="res-label">📦 สารที่ได้:</span> <span id="res-name" class="res-val">-</span></div>
+        <div class="res-row"><span class="res-label">📝 สูตรเคมี:</span> <span id="res-formula" class="res-val">-</span></div>
+        <div class="res-row"><span class="res-label">🌡️ อุณหภูมิ:</span> <span id="res-temp" class="res-val">-</span></div>
+        <div class="res-row"><span class="res-label">🎨 สี:</span> <span id="res-color" class="res-val">-</span></div>
+        <div class="res-row"><span class="res-label">🧊 สถานะ:</span> <span id="res-state" class="res-val">-</span></div>
+        <div class="res-row"><span class="res-label">🧱 ตะกอน:</span> <span id="res-prec" class="res-val">-</span></div>
+        <div class="res-row"><span class="res-label">☁️ แก๊ส:</span> <span id="res-gas" class="res-val">-</span></div>
+        <div style="text-align: right; font-size: 12px; color: #94a3b8; margin-top: 10px;">ปริมาตรรวม: <span id="res-vol">0</span> mL</div>
     </div>
 </div>
 
-<div id="periodicModal" class="periodic-modal-overlay">
-    <div class="periodic-modal-content">
-        <span class="periodic-close-btn" onclick="closePeriodicTable()">&times;</span>
-        <h3 class="periodic-modal-title">ตารางธาตุ (Periodic Table of Elements)</h3>
-        <p style="text-align:center; margin-bottom:20px; font-size: 15px; color: #94a3b8;">คลิกที่ธาตุเพื่อเลือก (ระบบจะค้นหาชื่อที่ตรงกับในฐานข้อมูลสารเคมีของโรงเรียน)</p>
-        <div id="periodicGridContainer" class="periodic-grid"></div>
+<div id="periodicModal" class="modal">
+    <div class="modal-content">
+        <span class="close-btn" onclick="closePeriodic()">&times;</span>
+        <h3 style="text-align:center; color: white; font-size: 24px; margin-top:0;">📅 ตารางธาตุ (Periodic Table)</h3>
+        <p style="text-align:center; color: #94a3b8;">เลือกธาตุเพื่อนำไปใส่ในบีกเกอร์</p>
+        <div id="periodicGrid" class="periodic-grid"></div>
     </div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/tom-select@2.2.2/dist/js/tom-select.complete.min.js"></script>
 
-<script type="module">
-    try {
-        const engine = await import('./js/3d_engine.js');
-        window.hookInit3D = engine.init3DScene;
-        window.hookUpdateVisuals = engine.updateLiquidVisuals;
-        
-        const container = document.getElementById('viewer3d');
-        if (container && window.hookInit3D) {
-            window.hookInit3D(container);
-            const fallback = document.getElementById('viewer3d-fallback');
-            if(fallback) fallback.style.display = 'none';
-        }
-    } catch(e) {
-        console.warn("⚠️ ไม่สามารถโหลด 3D Engine ได้ (อาจไม่มีไฟล์ ./js/3d_engine.js) ระบบจะทำงานในโหมดตัวหนังสือแทน", e);
-    }
-</script>
+<script>
+    // 1. ข้อมูลตารางธาตุ 118 ธาตุ (Full Data)
+    const periodicData = [
+        { n: 1, s: 'H', name: 'Hydrogen', g: 1, p: 1, c: 'nonmetal' },
+        { n: 2, s: 'He', name: 'Helium', g: 18, p: 1, c: 'noble-gas' },
+        { n: 3, s: 'Li', name: 'Lithium', g: 1, p: 2, c: 'alkali' },
+        { n: 4, s: 'Be', name: 'Beryllium', g: 2, p: 2, c: 'alkaline' },
+        { n: 5, s: 'B', name: 'Boron', g: 13, p: 2, c: 'metalloid' },
+        { n: 6, s: 'C', name: 'Carbon', g: 14, p: 2, c: 'nonmetal' },
+        { n: 7, s: 'N', name: 'Nitrogen', g: 15, p: 2, c: 'nonmetal' },
+        { n: 8, s: 'O', name: 'Oxygen', g: 16, p: 2, c: 'nonmetal' },
+        { n: 9, s: 'F', name: 'Fluorine', g: 17, p: 2, c: 'halogen' },
+        { n: 10, s: 'Ne', name: 'Neon', g: 18, p: 2, c: 'noble-gas' },
+        { n: 11, s: 'Na', name: 'Sodium', g: 1, p: 3, c: 'alkali' },
+        { n: 12, s: 'Mg', name: 'Magnesium', g: 2, p: 3, c: 'alkaline' },
+        { n: 13, s: 'Al', name: 'Aluminium', g: 13, p: 3, c: 'post-transition' },
+        { n: 14, s: 'Si', name: 'Silicon', g: 14, p: 3, c: 'metalloid' },
+        { n: 15, s: 'P', name: 'Phosphorus', g: 15, p: 3, c: 'nonmetal' },
+        { n: 16, s: 'S', name: 'Sulfur', g: 16, p: 3, c: 'nonmetal' },
+        { n: 17, s: 'Cl', name: 'Chlorine', g: 17, p: 3, c: 'halogen' },
+        { n: 18, s: 'Ar', name: 'Argon', g: 18, p: 3, c: 'noble-gas' },
+        { n: 19, s: 'K', name: 'Potassium', g: 1, p: 4, c: 'alkali' },
+        { n: 20, s: 'Ca', name: 'Calcium', g: 2, p: 4, c: 'alkaline' },
+        { n: 21, s: 'Sc', name: 'Scandium', g: 3, p: 4, c: 'transition' },
+        { n: 22, s: 'Ti', name: 'Titanium', g: 4, p: 4, c: 'transition' },
+        { n: 23, s: 'V', name: 'Vanadium', g: 5, p: 4, c: 'transition' },
+        { n: 24, s: 'Cr', name: 'Chromium', g: 6, p: 4, c: 'transition' },
+        { n: 25, s: 'Mn', name: 'Manganese', g: 7, p: 4, c: 'transition' },
+        { n: 26, s: 'Fe', name: 'Iron', g: 8, p: 4, c: 'transition' },
+        { n: 27, s: 'Co', name: 'Cobalt', g: 9, p: 4, c: 'transition' },
+        { n: 28, s: 'Ni', name: 'Nickel', g: 10, p: 4, c: 'transition' },
+        { n: 29, s: 'Cu', name: 'Copper', g: 11, p: 4, c: 'transition' },
+        { n: 30, s: 'Zn', name: 'Zinc', g: 12, p: 4, c: 'transition' },
+        { n: 31, s: 'Ga', name: 'Gallium', g: 13, p: 4, c: 'post-transition' },
+        { n: 32, s: 'Ge', name: 'Germanium', g: 14, p: 4, c: 'metalloid' },
+        { n: 33, s: 'As', name: 'Arsenic', g: 15, p: 4, c: 'metalloid' },
+        { n: 34, s: 'Se', name: 'Selenium', g: 16, p: 4, c: 'nonmetal' },
+        { n: 35, s: 'Br', name: 'Bromine', g: 17, p: 4, c: 'halogen' },
+        { n: 36, s: 'Kr', name: 'Krypton', g: 18, p: 4, c: 'noble-gas' },
+        { n: 37, s: 'Rb', name: 'Rubidium', g: 1, p: 5, c: 'alkali' },
+        { n: 38, s: 'Sr', name: 'Strontium', g: 2, p: 5, c: 'alkaline' },
+        { n: 39, s: 'Y', name: 'Yttrium', g: 3, p: 5, c: 'transition' },
+        { n: 40, s: 'Zr', name: 'Zirconium', g: 4, p: 5, c: 'transition' },
+        { n: 41, s: 'Nb', name: 'Niobium', g: 5, p: 5, c: 'transition' },
+        { n: 42, s: 'Mo', name: 'Molybdenum', g: 6, p: 5, c: 'transition' },
+        { n: 43, s: 'Tc', name: 'Technetium', g: 7, p: 5, c: 'transition' },
+        { n: 44, s: 'Ru', name: 'Ruthenium', g: 8, p: 5, c: 'transition' },
+        { n: 45, s: 'Rh', name: 'Rhodium', g: 9, p: 5, c: 'transition' },
+        { n: 46, s: 'Pd', name: 'Palladium', g: 10, p: 5, c: 'transition' },
+        { n: 47, s: 'Ag', name: 'Silver', g: 11, p: 5, c: 'transition' },
+        { n: 48, s: 'Cd', name: 'Cadmium', g: 12, p: 5, c: 'transition' },
+        { n: 49, s: 'In', name: 'Indium', g: 13, p: 5, c: 'post-transition' },
+        { n: 50, s: 'Sn', name: 'Tin', g: 14, p: 5, c: 'post-transition' },
+        { n: 51, s: 'Sb', name: 'Antimony', g: 15, p: 5, c: 'metalloid' },
+        { n: 52, s: 'Te', name: 'Tellurium', g: 16, p: 5, c: 'metalloid' },
+        { n: 53, s: 'I', name: 'Iodine', g: 17, p: 5, c: 'halogen' },
+        { n: 54, s: 'Xe', name: 'Xenon', g: 18, p: 5, c: 'noble-gas' },
+        { n: 55, s: 'Cs', name: 'Cesium', g: 1, p: 6, c: 'alkali' },
+        { n: 56, s: 'Ba', name: 'Barium', g: 2, p: 6, c: 'alkaline' },
+        { n: 57, s: 'La', name: 'Lanthanum', g: 3, p: 6, c: 'lanthanide' },
+        { n: 72, s: 'Hf', name: 'Hafnium', g: 4, p: 6, c: 'transition' },
+        { n: 73, s: 'Ta', name: 'Tantalum', g: 5, p: 6, c: 'transition' },
+        { n: 74, s: 'W', name: 'Tungsten', g: 6, p: 6, c: 'transition' },
+        { n: 75, s: 'Re', name: 'Rhenium', g: 7, p: 6, c: 'transition' },
+        { n: 76, s: 'Os', name: 'Osmium', g: 8, p: 6, c: 'transition' },
+        { n: 77, s: 'Ir', name: 'Iridium', g: 9, p: 6, c: 'transition' },
+        { n: 78, s: 'Pt', name: 'Platinum', g: 10, p: 6, c: 'transition' },
+        { n: 79, s: 'Au', name: 'Gold', g: 11, p: 6, c: 'transition' },
+        { n: 80, s: 'Hg', name: 'Mercury', g: 12, p: 6, c: 'transition' },
+        { n: 81, s: 'Tl', name: 'Thallium', g: 13, p: 6, c: 'post-transition' },
+        { n: 82, s: 'Pb', name: 'Lead', g: 14, p: 6, c: 'post-transition' },
+        { n: 83, s: 'Bi', name: 'Bismuth', g: 15, p: 6, c: 'post-transition' },
+        { n: 84, s: 'Po', name: 'Polonium', g: 16, p: 6, c: 'post-transition' },
+        { n: 85, s: 'At', name: 'Astatine', g: 17, p: 6, c: 'halogen' },
+        { n: 86, s: 'Rn', name: 'Radon', g: 18, p: 6, c: 'noble-gas' },
+        { n: 87, s: 'Fr', name: 'Francium', g: 1, p: 7, c: 'alkali' },
+        { n: 88, s: 'Ra', name: 'Radium', g: 2, p: 7, c: 'alkaline' },
+        { n: 89, s: 'Ac', name: 'Actinium', g: 3, p: 7, c: 'actinide' },
+        { n: 104, s: 'Rf', name: 'Rutherfordium', g: 4, p: 7, c: 'transition' },
+        { n: 105, s: 'Db', name: 'Dubnium', g: 5, p: 7, c: 'transition' },
+        { n: 106, s: 'Sg', name: 'Seaborgium', g: 6, p: 7, c: 'transition' },
+        { n: 107, s: 'Bh', name: 'Bohrium', g: 7, p: 7, c: 'transition' },
+        { n: 108, s: 'Hs', name: 'Hassium', g: 8, p: 7, c: 'transition' },
+        { n: 109, s: 'Mt', name: 'Meitnerium', g: 9, p: 7, c: 'transition' },
+        { n: 110, s: 'Ds', name: 'Darmstadtium', g: 10, p: 7, c: 'transition' },
+        { n: 111, s: 'Rg', name: 'Roentgenium', g: 11, p: 7, c: 'transition' },
+        { n: 112, s: 'Cn', name: 'Copernicium', g: 12, p: 7, c: 'transition' },
+        { n: 113, s: 'Nh', name: 'Nihonium', g: 13, p: 7, c: 'post-transition' },
+        { n: 114, s: 'Fl', name: 'Flerovium', g: 14, p: 7, c: 'post-transition' },
+        { n: 115, s: 'Mc', name: 'Moscovium', g: 15, p: 7, c: 'post-transition' },
+        { n: 116, s: 'Lv', name: 'Livermorium', g: 16, p: 7, c: 'post-transition' },
+        { n: 117, s: 'Ts', name: 'Tennessine', g: 17, p: 7, c: 'halogen' },
+        { n: 118, s: 'Og', name: 'Oganesson', g: 18, p: 7, c: 'noble-gas' }
+    ];
 
-<script type="text/javascript">
-    
-    let tomA = null;
-    let tomB = null;
-    let hp = 100;
-    let beakerHp = 100;
-    let currentTargetInput = null;
+    let tomA = null, tomB = null;
+    let hp = 100, beakerHp = 100;
+    let targetSelect = 'A';
 
-    document.addEventListener('DOMContentLoaded', () => {
-        // โหลดข้อมูล Dropdown
-        loadChemicalsAndInitTomSelect();
-
-        // ตั้งค่า Event Listner ให้ปุ่ม
-        document.getElementById('mix-button').addEventListener('click', handleMix);
-        document.getElementById('btn-reset-all').addEventListener('click', () => {
-            if(confirm("ต้องการเคลียร์สารในบีกเกอร์และเริ่มใหม่หรือไม่?")) {
-                window.location.reload();
-            }
-        });
-
+    document.addEventListener('DOMContentLoaded', async () => {
         // วาดตารางธาตุ
         renderPeriodicTable();
-    });
-    
-    async function loadChemicalsAndInitTomSelect() {
-        try {
-            // เรียกใช้ API จากไฟล์ตัวเองเพื่อดึงรายการสารเคมี
-            const response = await fetch('mix.php?action=get_chemicals');
-            const responseText = await response.text();
-            
-            let data;
-            try {
-                data = JSON.parse(responseText);
-            } catch (err) {
-                console.error("JSON Error:", responseText);
-                throw new Error("รูปแบบข้อมูลจาก Database ไม่ถูกต้อง (อาจมี Error ซ่อนอยู่ใน PHP)");
-            }
-            
-            if (!Array.isArray(data)) throw new Error("ข้อมูลไม่ใช่ Array");
 
-            const config = {
-                valueField: 'value', 
-                labelField: 'text',  
-                searchField: 'text', 
-                options: data,       
-                maxOptions: 500,
-                placeholder: 'พิมพ์ชื่อสารเคมี หรือ สูตรเคมี...',
-                dropdownParent: 'body', 
+        // โหลดข้อมูลสารเคมี
+        try {
+            const res = await fetch('mix.php?action=get_chemicals');
+            const data = await res.json();
+            
+            const tsConfig = {
+                valueField: 'value', labelField: 'text', searchField: 'text',
+                options: data, maxOptions: 500,
                 render: {
-                    option: function(data, escape) { 
-                        return '<div style="padding: 8px; border-bottom: 1px solid #f1f5f9;">' + escape(data.text) + '</div>'; 
-                    },
-                    no_results: function(data, escape) { 
-                        return '<div class="no-results" style="padding: 10px; color: #ef4444;">ไม่พบข้อมูลสารนี้ในคลังเคมีของโรงเรียน</div>'; 
-                    }
+                    option: (d, e) => `<div style="padding: 8px;">${e(d.text)}</div>`
                 }
             };
 
-            tomA = new TomSelect("#chemicalA", config);
-            tomB = new TomSelect("#chemicalB", config);
+            tomA = new TomSelect('#chemA', tsConfig);
+            tomB = new TomSelect('#chemB', tsConfig);
+        } catch(e) { console.error("Chemicals Load Error:", e); }
 
-        } catch (error) {
-            console.error("Failed to load chemicals:", error);
-            alert("⚠️ ไม่สามารถโหลดรายการสารเคมีได้ (กรุณากด F12 ดู Console หรือตรวจสอบการเชื่อมต่อฐานข้อมูล)");
-        }
-    }
-
-    // ข้อมูลตารางธาตุ 118 ธาตุ
-    const periodicTableData = [
-        { num: 1, sym: 'H', name: 'Hydrogen', group: 1, period: 1, cat: 'nonmetal' },
-        { num: 2, sym: 'He', name: 'Helium', group: 18, period: 1, cat: 'noble-gas' },
-        { num: 3, sym: 'Li', name: 'Lithium', group: 1, period: 2, cat: 'alkali' },
-        { num: 4, sym: 'Be', name: 'Beryllium', group: 2, period: 2, cat: 'alkaline-earth' },
-        { num: 5, sym: 'B', name: 'Boron', group: 13, period: 2, cat: 'metalloid' },
-        { num: 6, sym: 'C', name: 'Carbon', group: 14, period: 2, cat: 'nonmetal' },
-        { num: 7, sym: 'N', name: 'Nitrogen', group: 15, period: 2, cat: 'nonmetal' },
-        { num: 8, sym: 'O', name: 'Oxygen', group: 16, period: 2, cat: 'nonmetal' },
-        { num: 9, sym: 'F', name: 'Fluorine', group: 17, period: 2, cat: 'halogen' },
-        { num: 10, sym: 'Ne', name: 'Neon', group: 18, period: 2, cat: 'noble-gas' },
-        { num: 11, sym: 'Na', name: 'Sodium', group: 1, period: 3, cat: 'alkali' },
-        { num: 12, sym: 'Mg', name: 'Magnesium', group: 2, period: 3, cat: 'alkaline-earth' },
-        { num: 13, sym: 'Al', name: 'Aluminium', group: 13, period: 3, cat: 'post-transition' },
-        { num: 14, sym: 'Si', name: 'Silicon', group: 14, period: 3, cat: 'metalloid' },
-        { num: 15, sym: 'P', name: 'Phosphorus', group: 15, period: 3, cat: 'nonmetal' },
-        { num: 16, sym: 'S', name: 'Sulfur', group: 16, period: 3, cat: 'nonmetal' },
-        { num: 17, sym: 'Cl', name: 'Chlorine', group: 17, period: 3, cat: 'halogen' },
-        { num: 18, sym: 'Ar', name: 'Argon', group: 18, period: 3, cat: 'noble-gas' },
-        { num: 19, sym: 'K', name: 'Potassium', group: 1, period: 4, cat: 'alkali' },
-        { num: 20, sym: 'Ca', name: 'Calcium', group: 2, period: 4, cat: 'alkaline-earth' },
-        { num: 21, sym: 'Sc', name: 'Scandium', group: 3, period: 4, cat: 'transition' },
-        { num: 22, sym: 'Ti', name: 'Titanium', group: 4, period: 4, cat: 'transition' },
-        { num: 23, sym: 'V', name: 'Vanadium', group: 5, period: 4, cat: 'transition' },
-        { num: 24, sym: 'Cr', name: 'Chromium', group: 6, period: 4, cat: 'transition' },
-        { num: 25, sym: 'Mn', name: 'Manganese', group: 7, period: 4, cat: 'transition' },
-        { num: 26, sym: 'Fe', name: 'Iron', group: 8, period: 4, cat: 'transition' },
-        { num: 27, sym: 'Co', name: 'Cobalt', group: 9, period: 4, cat: 'transition' },
-        { num: 28, sym: 'Ni', name: 'Nickel', group: 10, period: 4, cat: 'transition' },
-        { num: 29, sym: 'Cu', name: 'Copper', group: 11, period: 4, cat: 'transition' },
-        { num: 30, sym: 'Zn', name: 'Zinc', group: 12, period: 4, cat: 'transition' },
-        { num: 31, sym: 'Ga', name: 'Gallium', group: 13, period: 4, cat: 'post-transition' },
-        { num: 32, sym: 'Ge', name: 'Germanium', group: 14, period: 4, cat: 'metalloid' },
-        { num: 33, sym: 'As', name: 'Arsenic', group: 15, period: 4, cat: 'metalloid' },
-        { num: 34, sym: 'Se', name: 'Selenium', group: 16, period: 4, cat: 'nonmetal' },
-        { num: 35, sym: 'Br', name: 'Bromine', group: 17, period: 4, cat: 'halogen' },
-        { num: 36, sym: 'Kr', name: 'Krypton', group: 18, period: 4, cat: 'noble-gas' },
-        { num: 37, sym: 'Rb', name: 'Rubidium', group: 1, period: 5, cat: 'alkali' },
-        { num: 38, sym: 'Sr', name: 'Strontium', group: 2, period: 5, cat: 'alkaline-earth' },
-        { num: 39, sym: 'Y', name: 'Yttrium', group: 3, period: 5, cat: 'transition' },
-        { num: 40, sym: 'Zr', name: 'Zirconium', group: 4, period: 5, cat: 'transition' },
-        { num: 41, sym: 'Nb', name: 'Niobium', group: 5, period: 5, cat: 'transition' },
-        { num: 42, sym: 'Mo', name: 'Molybdenum', group: 6, period: 5, cat: 'transition' },
-        { num: 43, sym: 'Tc', name: 'Technetium', group: 7, period: 5, cat: 'transition' },
-        { num: 44, sym: 'Ru', name: 'Ruthenium', group: 8, period: 5, cat: 'transition' },
-        { num: 45, sym: 'Rh', name: 'Rhodium', group: 9, period: 5, cat: 'transition' },
-        { num: 46, sym: 'Pd', name: 'Palladium', group: 10, period: 5, cat: 'transition' },
-        { num: 47, sym: 'Ag', name: 'Silver', group: 11, period: 5, cat: 'transition' },
-        { num: 48, sym: 'Cd', name: 'Cadmium', group: 12, period: 5, cat: 'transition' },
-        { num: 49, sym: 'In', name: 'Indium', group: 13, period: 5, cat: 'post-transition' },
-        { num: 50, sym: 'Sn', name: 'Tin', group: 14, period: 5, cat: 'post-transition' },
-        { num: 51, sym: 'Sb', name: 'Antimony', group: 15, period: 5, cat: 'metalloid' },
-        { num: 52, sym: 'Te', name: 'Tellurium', group: 16, period: 5, cat: 'metalloid' },
-        { num: 53, sym: 'I', name: 'Iodine', group: 17, period: 5, cat: 'halogen' },
-        { num: 54, sym: 'Xe', name: 'Xenon', group: 18, period: 5, cat: 'noble-gas' },
-        { num: 55, sym: 'Cs', name: 'Cesium', group: 1, period: 6, cat: 'alkali' },
-        { num: 56, sym: 'Ba', name: 'Barium', group: 2, period: 6, cat: 'alkaline-earth' },
-        { num: 57, sym: 'La', name: 'Lanthanum', group: 3, period: 6, cat: 'lanthanide' },
-        { num: 58, sym: 'Ce', name: 'Cerium', group: 3, period: 9, cat: 'lanthanide' },
-        { num: 59, sym: 'Pr', name: 'Praseodymium', group: 4, period: 9, cat: 'lanthanide' },
-        { num: 60, sym: 'Nd', name: 'Neodymium', group: 5, period: 9, cat: 'lanthanide' },
-        { num: 61, sym: 'Pm', name: 'Promethium', group: 6, period: 9, cat: 'lanthanide' },
-        { num: 62, sym: 'Sm', name: 'Samarium', group: 7, period: 9, cat: 'lanthanide' },
-        { num: 63, sym: 'Eu', name: 'Europium', group: 8, period: 9, cat: 'lanthanide' },
-        { num: 64, sym: 'Gd', name: 'Gadolinium', group: 9, period: 9, cat: 'lanthanide' },
-        { num: 65, sym: 'Tb', name: 'Terbium', group: 10, period: 9, cat: 'lanthanide' },
-        { num: 66, sym: 'Dy', name: 'Dysprosium', group: 11, period: 9, cat: 'lanthanide' },
-        { num: 67, sym: 'Ho', name: 'Holmium', group: 12, period: 9, cat: 'lanthanide' },
-        { num: 68, sym: 'Er', name: 'Erbium', group: 13, period: 9, cat: 'lanthanide' },
-        { num: 69, sym: 'Tm', name: 'Thulium', group: 14, period: 9, cat: 'lanthanide' },
-        { num: 70, sym: 'Yb', name: 'Ytterbium', group: 15, period: 9, cat: 'lanthanide' },
-        { num: 71, sym: 'Lu', name: 'Lutetium', group: 16, period: 9, cat: 'lanthanide' },
-        { num: 72, sym: 'Hf', name: 'Hafnium', group: 4, period: 6, cat: 'transition' },
-        { num: 73, sym: 'Ta', name: 'Tantalum', group: 5, period: 6, cat: 'transition' },
-        { num: 74, sym: 'W', name: 'Tungsten', group: 6, period: 6, cat: 'transition' },
-        { num: 75, sym: 'Re', name: 'Rhenium', group: 7, period: 6, cat: 'transition' },
-        { num: 76, sym: 'Os', name: 'Osmium', group: 8, period: 6, cat: 'transition' },
-        { num: 77, sym: 'Ir', name: 'Iridium', group: 9, period: 6, cat: 'transition' },
-        { num: 78, sym: 'Pt', name: 'Platinum', group: 10, period: 6, cat: 'transition' },
-        { num: 79, sym: 'Au', name: 'Gold', group: 11, period: 6, cat: 'transition' },
-        { num: 80, sym: 'Hg', name: 'Mercury', group: 12, period: 6, cat: 'transition' },
-        { num: 81, sym: 'Tl', name: 'Thallium', group: 13, period: 6, cat: 'post-transition' },
-        { num: 82, sym: 'Pb', name: 'Lead', group: 14, period: 6, cat: 'post-transition' },
-        { num: 83, sym: 'Bi', name: 'Bismuth', group: 15, period: 6, cat: 'post-transition' },
-        { num: 84, sym: 'Po', name: 'Polonium', group: 16, period: 6, cat: 'post-transition' },
-        { num: 85, sym: 'At', name: 'Astatine', group: 17, period: 6, cat: 'halogen' },
-        { num: 86, sym: 'Rn', name: 'Radon', group: 18, period: 6, cat: 'noble-gas' },
-        { num: 87, sym: 'Fr', name: 'Francium', group: 1, period: 7, cat: 'alkali' },
-        { num: 88, sym: 'Ra', name: 'Radium', group: 2, period: 7, cat: 'alkaline-earth' },
-        { num: 89, sym: 'Ac', name: 'Actinium', group: 3, period: 7, cat: 'actinide' },
-        { num: 90, sym: 'Th', name: 'Thorium', group: 3, period: 10, cat: 'actinide' },
-        { num: 91, sym: 'Pa', name: 'Protactinium', group: 4, period: 10, cat: 'actinide' },
-        { num: 92, sym: 'U', name: 'Uranium', group: 5, period: 10, cat: 'actinide' },
-        { num: 93, sym: 'Np', name: 'Neptunium', group: 6, period: 10, cat: 'actinide' },
-        { num: 94, sym: 'Pu', name: 'Plutonium', group: 7, period: 10, cat: 'actinide' },
-        { num: 95, sym: 'Am', name: 'Americium', group: 8, period: 10, cat: 'actinide' },
-        { num: 96, sym: 'Cm', name: 'Curium', group: 9, period: 10, cat: 'actinide' },
-        { num: 97, sym: 'Bk', name: 'Berkelium', group: 10, period: 10, cat: 'actinide' },
-        { num: 98, sym: 'Cf', name: 'Californium', group: 11, period: 10, cat: 'actinide' },
-        { num: 99, sym: 'Es', name: 'Einsteinium', group: 12, period: 10, cat: 'actinide' },
-        { num: 100, sym: 'Fm', name: 'Fermium', group: 13, period: 10, cat: 'actinide' },
-        { num: 101, sym: 'Md', name: 'Mendelevium', group: 14, period: 10, cat: 'actinide' },
-        { num: 102, sym: 'No', name: 'Nobelium', group: 15, period: 10, cat: 'actinide' },
-        { num: 103, sym: 'Lr', name: 'Lawrencium', group: 16, period: 10, cat: 'actinide' },
-        { num: 104, sym: 'Rf', name: 'Rutherfordium', group: 4, period: 7, cat: 'transition' },
-        { num: 105, sym: 'Db', name: 'Dubnium', group: 5, period: 7, cat: 'transition' },
-        { num: 106, sym: 'Sg', name: 'Seaborgium', group: 6, period: 7, cat: 'transition' },
-        { num: 107, sym: 'Bh', name: 'Bohrium', group: 7, period: 7, cat: 'transition' },
-        { num: 108, sym: 'Hs', name: 'Hassium', group: 8, period: 7, cat: 'transition' },
-        { num: 109, sym: 'Mt', name: 'Meitnerium', group: 9, period: 7, cat: 'transition' },
-        { num: 110, sym: 'Ds', name: 'Darmstadtium', group: 10, period: 7, cat: 'transition' },
-        { num: 111, sym: 'Rg', name: 'Roentgenium', group: 11, period: 7, cat: 'transition' },
-        { num: 112, sym: 'Cn', name: 'Copernicium', group: 12, period: 7, cat: 'transition' },
-        { num: 113, sym: 'Nh', name: 'Nihonium', group: 13, period: 7, cat: 'post-transition' },
-        { num: 114, sym: 'Fl', name: 'Flerovium', group: 14, period: 7, cat: 'post-transition' },
-        { num: 115, sym: 'Mc', name: 'Moscovium', group: 15, period: 7, cat: 'post-transition' },
-        { num: 116, sym: 'Lv', name: 'Livermorium', group: 16, period: 7, cat: 'post-transition' },
-        { num: 117, sym: 'Ts', name: 'Tennessine', group: 17, period: 7, cat: 'halogen' },
-        { num: 118, sym: 'Og', name: 'Oganesson', group: 18, period: 7, cat: 'noble-gas' }
-    ];
+        // ผูก Event ปุ่มผสม
+        document.getElementById('mix-button').onclick = handleMix;
+    });
 
     function renderPeriodicTable() {
-        const gridContainer = document.getElementById('periodicGridContainer');
-        if (!gridContainer) return;
-
-        for (let row = 1; row <= 10; row++) {
-            for (let col = 1; col <= 18; col++) {
-                let element = null;
-                for (const el of periodicTableData) {
-                    if (el.period === row && el.group === col) { 
-                        element = el; 
-                        break; 
-                    }
-                }
-
+        const grid = document.getElementById('periodicGrid');
+        for (let r = 1; r <= 7; r++) {
+            for (let c = 1; c <= 18; c++) {
+                const el = periodicData.find(x => x.p === r && x.g === c);
                 const cell = document.createElement('div');
-                if (element) {
-                    cell.className = `element-cell cat-${element.cat}`;
-                    cell.innerHTML = `
-                        <span class="atom-num">${element.num}</span>
-                        <span class="atom-sym">${element.sym}</span>
-                        <span class="atom-name">${element.name}</span>
-                    `;
-                    cell.style.gridRow = row;
-                    cell.style.gridColumn = col;
-                    cell.addEventListener('click', () => selectElementFromTable(element.name));
+                if (el) {
+                    cell.className = `element-cell cat-${el.c}`;
+                    cell.innerHTML = `<span class="atom-num">${el.n}</span><span class="atom-sym">${el.s}</span>`;
+                    cell.onclick = () => selectElement(el.name);
                 } else {
-                    cell.className = 'empty-cell';
-                    cell.style.gridRow = row;
-                    cell.style.gridColumn = col;
+                    cell.style.background = 'transparent';
                 }
-                gridContainer.appendChild(cell);
+                grid.appendChild(cell);
             }
         }
     }
 
-    // ฟังก์ชันให้ปุ่มเปิด Modal ตารางธาตุใช้งานได้
-    window.openPeriodicTable = function(target) {
-        currentTargetInput = target; 
-        const modal = document.getElementById('periodicModal');
-        if (modal) {
-            modal.style.display = 'flex'; 
-        }
-    }
-
-    window.closePeriodicTable = function() {
-        currentTargetInput = null; 
-        const modal = document.getElementById('periodicModal');
-        if (modal) {
-            modal.style.display = 'none'; 
-        }
-    }
-
-    // ปิดเมื่อคลิกนอกกรอบ
-    window.onclick = function(event) {
-        const modal = document.getElementById('periodicModal');
-        if (event.target == modal) {
-            closePeriodicTable();
-        }
-    }
-
-    function selectElementFromTable(elementName) {
-        if (!currentTargetInput) return;
-        const targetTom = (currentTargetInput === 'A') ? tomA : tomB;
-        let foundId = null;
-        
-        // ค้นหา ID ที่ตรงกับชื่อธาตุ
-        for (const [id, optionData] of Object.entries(targetTom.options)) {
-            if (optionData.text.toLowerCase().includes(elementName.toLowerCase())) {
-                foundId = id; 
-                break;
-            }
-        }
-
-        if (foundId) {
-            targetTom.setValue(foundId);
-            closePeriodicTable();
+    function openPeriodic(target) { targetSelect = target; document.getElementById('periodicModal').style.display = 'flex'; }
+    function closePeriodic() { document.getElementById('periodicModal').style.display = 'none'; }
+    
+    function selectElement(name) {
+        const ts = (targetSelect === 'A') ? tomA : tomB;
+        const options = Object.values(ts.options);
+        const match = options.find(o => o.text.toLowerCase().includes(name.toLowerCase()));
+        if (match) {
+            ts.setValue(match.value);
+            closePeriodic();
         } else {
-            alert(`⚠️ ไม่พบธาตุ "${elementName}" ในฐานข้อมูลสารเคมีของห้องแล็บตอนนี้\n(ครูอาจจะยังไม่ได้เพิ่มสารนี้เข้าไป)`);
+            alert("⚠️ ไม่พบสารนี้ในคลังเคมีของโรงเรียน");
         }
     }
 
     async function handleMix() {
-        if(hp <= 0 || beakerHp <= 0) {
-            alert("อุปกรณ์พัง หรือ คุณอยู่ในสภาพที่ไม่พร้อมทดลองแล้ว! กรุณากดปุ่ม 'เบิกอุปกรณ์ใหม่'");
-            return;
-        }
+        if(hp <= 0 || beakerHp <= 0) return alert("❌ อุปกรณ์พังแล้ว! กรุณากดรีเซ็ต");
 
-        const chemA = tomA.getValue();
-        const chemB = tomB.getValue();
-        const volA = document.getElementById('volA').value || 0;
-        const volB = document.getElementById('volB').value || 0;
+        const a = tomA.getValue(), b = tomB.getValue();
+        const vA = document.getElementById('volA').value, vB = document.getElementById('volB').value;
 
-        if (!chemA || !chemB) {
-            alert("⚠️ กรุณาเลือกสารเคมีให้ครบทั้ง 2 ตัวก่อนผสมครับ");
-            return;
-        }
+        if(!a || !b) return alert("กรุณาเลือกสารเคมีให้ครบ!");
 
         const btn = document.getElementById('mix-button');
-        btn.disabled = true;
-        btn.innerHTML = "⏳ กำลังทำปฏิกิริยาเคมี...";
+        btn.disabled = true; btn.innerText = "⏳ กำลังเกิดปฏิกิริยา...";
 
         try {
-            // เรียก API ในไฟล์ตัวเอง
-            const url = `mix.php?action=mix&a=${chemA}&b=${chemB}&volA=${volA}&volB=${volB}`;
-            const response = await fetch(url);
-            const responseText = await response.text();
-            
-            let data;
-            try {
-                data = JSON.parse(responseText);
-            } catch (e) {
-                console.error("Not JSON:", responseText);
-                throw new Error("ระบบหลังบ้านมีปัญหา (อาจเกิดจากคำสั่ง SQL หรือ ตัวแปรสูญหาย)");
-            }
+            const res = await fetch(`mix.php?action=mix&a=${a}&b=${b}&volA=${vA}&volB=${vB}`);
+            const data = await res.json();
+            if(!data.success) throw new Error(data.error);
 
-            if (!data.success) {
-                throw new Error(data.error || "Server Error: การคำนวณล้มเหลว");
-            }
-
-            // แสดงกล่องผลลัพธ์
+            // Update UI
             document.getElementById('result-box').style.display = 'block';
+            document.getElementById('res-name').innerText = data.product_name;
+            document.getElementById('res-formula').innerText = data.product_formula;
+            document.getElementById('res-temp').innerText = data.temperature + " °C";
+            document.getElementById('res-color').innerHTML = `<span style="display:inline-block;width:15px;height:15px;background:${data.special_color};border-radius:50%;margin-right:5px;"></span>${data.color_name_thai}`;
+            document.getElementById('res-state').innerText = data.final_state;
+            document.getElementById('res-prec').innerText = data.precipitate;
+            document.getElementById('res-gas').innerText = data.gas;
+            document.getElementById('res-vol').innerText = data.total_volume;
 
-            // ถ้า 3D Engine โหลดสำเร็จ ให้เรียกใช้อัปเดต
-            if(typeof window.hookUpdateVisuals === 'function') {
-                window.hookUpdateVisuals(data);
-            }
+            // Effects Logic
+            applyEffects(data);
 
-            updateResultBox(data);
-            handleSpecialEffects(data);
-
-        } catch (err) {
-            console.error(err);
-            alert("❌ เกิดข้อผิดพลาด: " + err.message);
-        } finally {
-            btn.disabled = false;
-            btn.innerHTML = "⚗️ ผสมสารเคมี (Mix It!)";
-        }
+        } catch(e) { alert("เกิดข้อผิดพลาด: " + e.message); }
+        finally { btn.disabled = false; btn.innerText = "⚗️ ผสมสารเคมี (Mix It!)"; }
     }
 
-    function updateResultBox(data) {
-        setText('res-product', data.product_name);
-        setText('res-formula', data.product_formula || "-");
-        setText('res-temp', (data.temperature || 25) + " °C");
-        
-        const colorHex = data.special_color || '#FFFFFF';
-        const colorName = data.color_name_thai || "ไม่ระบุ";
-        document.getElementById('res-color').innerHTML = `
-            <span style="display:inline-block; width:16px; height:16px; background-color:${colorHex}; border: 1px solid #94a3b8; margin-right:5px; vertical-align:middle; border-radius: 50%;"></span> 
-            ${colorName}
-        `;
-
-        setText('res-state', translateState(data.final_state));
-        setText('res-precipitate', data.precipitate);
-        setText('res-gas', data.gas);
-        setText('res-volume', data.total_volume);
-    }
-
-    function handleSpecialEffects(data) {
-        resetEffects();
-        if (data.effect_type === 'explosion') {
-            triggerExplosion();
-            updateBars(50, 50); 
-        } else if (data.effect_type === 'toxic_gas') {
-            triggerToxic();
-            updateBars(30, 5); 
-        } else if (data.damage_player > 0) {
-            // โดนดาเมจจากสารพิษธรรมดา
-            updateBars(data.damage_player, 0);
-        }
-    }
-
-    function setText(id, text) { 
-        const el = document.getElementById(id); 
-        if (el) el.innerText = text; 
-    }
-
-    function translateState(state) {
-        if(state === 'liquid') return 'ของเหลว (Liquid)';
-        if(state === 'solid') return 'ของแข็ง (Solid)';
-        if(state === 'gas') return 'ก๊าซ (Gas)';
-        return state;
-    }
-
-    function resetEffects() {
+    function applyEffects(data) {
+        // Reset Overlays
         document.getElementById('broken-overlay').style.opacity = 0;
         document.getElementById('toxic-overlay').style.opacity = 0;
-        document.body.classList.remove('shake');
+
+        if (data.effect_type === 'explosion') {
+            document.getElementById('broken-overlay').style.opacity = 1;
+            hp -= 50; beakerHp -= 100;
+            alert("💥 ตู้มมม!!! ระเบิดอย่างรุนแรง!");
+        } else if (data.effect_type === 'toxic_gas') {
+            document.getElementById('toxic-overlay').style.opacity = 1;
+            hp -= 30;
+            alert("☠️ แค่กๆ... แก๊สพิษฟุ้งกระจาย!");
+        } else if (data.damage_player > 0) {
+            hp -= (data.damage_player / 2);
+        }
+
+        updateBars();
     }
 
-    function triggerExplosion() {
-        document.getElementById('broken-overlay').style.opacity = 1;
-        document.body.classList.add('shake');
-        setTimeout(() => alert("💥 ตู้มมม!!! เกิดการระเบิดอย่างรุนแรง! (บีกเกอร์แตก)"), 100);
-    }
-
-    function triggerToxic() {
-        document.getElementById('toxic-overlay').style.opacity = 1;
-        setTimeout(() => alert("☠️ แค่กๆ! ก๊าซพิษฟุ้งกระจายในห้องแล็บ!"), 100);
-    }
-
-    function updateBars(damagePlayer, damageBeaker) {
-        hp -= damagePlayer; 
-        beakerHp -= damageBeaker;
-
-        if(hp < 0) hp = 0; 
-        if(beakerHp < 0) beakerHp = 0;
-        
-        document.getElementById('health-bar').style.width = hp + "%";
-        document.getElementById('text-health').innerText = hp + "%";
+    function updateBars() {
+        if(hp < 0) hp = 0; if(beakerHp < 0) beakerHp = 0;
+        document.getElementById('hp-bar').style.width = hp + "%";
+        document.getElementById('hp-text').innerText = hp + "%";
         document.getElementById('beaker-bar').style.width = beakerHp + "%";
-        document.getElementById('text-beaker').innerText = beakerHp + "%";
+        document.getElementById('beaker-text').innerText = beakerHp + "%";
         
-        if(hp <= 30) {
-            document.getElementById('health-bar').style.backgroundColor = "#ef4444"; 
-        } else {
-            document.getElementById('health-bar').style.backgroundColor = "#4ade80";
-        }
-
-        if(hp === 0) {
-            setTimeout(() => alert("💀 Game Over! คุณได้รับสารพิษมากเกินไป ต้องถูกนำส่งห้องพยาบาลด่วน! (โปรดกดรีเซ็ต)"), 500);
-        } else if(beakerHp === 0) {
-            setTimeout(() => alert("🧪 บีกเกอร์แตกแล้ว! การทดลองล้มเหลว กรุณาเบิกบีกเกอร์ใหม่ (โปรดกดรีเซ็ต)"), 500);
-        }
+        if(hp <= 0) alert("💀 คุณหมดสติจากการทดลอง!");
     }
 </script>
 

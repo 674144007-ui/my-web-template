@@ -1,114 +1,127 @@
 <?php
 // ===================================================================================
 // FILE: auth.php
-// ระบบตรวจสอบตัวตนและ Session (Fix: Duplicate Session Start & Strict Output)
+// ระบบตรวจสอบตัวตนและ Session (Fix HTTP 500: รองรับ PHP ทุกเวอร์ชั่น)
 // ===================================================================================
 
-// ป้องกันการเรียก session_start() ซ้ำ ซึ่งจะทำให้เกิด Notice Error
+// 1. เปิด Buffer อย่างปลอดภัย
+if (ob_get_level() == 0) {
+    ob_start();
+}
+
+// 2. จัดการ Session แบบรองรับ PHP ย้อนหลัง (แก้บัค 500)
 if (session_status() === PHP_SESSION_NONE) {
-    // ตั้งค่า Cookie ให้ปลอดภัยขึ้น
-    session_set_cookie_params([
-        'lifetime' => 0,
-        'path' => '/',
-        'domain' => '',
-        'secure' => false, // เปลี่ยนเป็น true ถ้าใช้ HTTPS
-        'httponly' => true,
-        'samesite' => 'Lax' // ป้องกัน CSRF ระดับหนึ่ง
-    ]);
+    // ใช้ parameter แถวเรียงแทน Array เพื่อให้รันได้ตั้งแต่ PHP 5.6 - 8.x
+    session_set_cookie_params(0, '/', '', false, true);
     session_start();
 }
 
-// ป้องกัน Cache อย่างเด็ดขาด เพื่อไม่ให้กด Back แล้วเจอข้อมูลเก่า
+// 3. ป้องกัน Cache
 if (!headers_sent()) {
     header("Cache-Control: no-store, no-cache, must-revalidate, max-age=0");
     header("Cache-Control: post-check=0, pre-check=0", false);
     header("Pragma: no-cache");
 }
 
-// โหลดไฟล์ Database แบบเงียบ (ถ้ามีปัญหาให้หยุดทันที)
-require_once 'db.php'; 
+// โหลดไฟล์ Database
+require_once __DIR__ . '/db.php'; 
 
-/**
- * ตรวจสอบว่า Login หรือยัง
- */
-function isLoggedIn() {
-    return isset($_SESSION['user_id']) && intval($_SESSION['user_id']) > 0;
-}
-
-/**
- * ตรวจสอบสถานะและอัปเดตเวลาล่าสุด (FIX: ป้องกันคอขวดโดยอัปเดตทุกๆ 5 นาทีแทนการอัปเดตทุกรีเฟรช)
- */
-function checkLoginStatus() {
-    global $conn;
-    if (isLoggedIn()) {
-        $uid = intval($_SESSION['user_id']);
-        
-        // หน่วงเวลาการอัปเดต Last Activity (300 วินาที = 5 นาที) เพื่อลดภาระ Database
-        if (!isset($_SESSION['last_activity_update']) || (time() - $_SESSION['last_activity_update']) > 300) {
-            try {
-                if ($conn) {
-                    $conn->query("UPDATE users SET last_activity = NOW() WHERE id = $uid");
-                    $_SESSION['last_activity_update'] = time();
-                }
-            } catch (Exception $e) {
-                // เงียบไว้ ไม่ต้องพ่น Error ออกมา
-            }
+// ป้องกันปัญหา Cannot redeclare function หากมีการเรียก auth.php ซ้ำ
+if (!function_exists('syncSessionKeys')) {
+    function syncSessionKeys() {
+        if (isset($_SESSION['id']) && !isset($_SESSION['user_id'])) {
+            $_SESSION['user_id'] = $_SESSION['id'];
+        } elseif (isset($_SESSION['user_id']) && !isset($_SESSION['id'])) {
+            $_SESSION['id'] = $_SESSION['user_id'];
         }
-        return true;
     }
-    return false;
+}
+syncSessionKeys();
+
+if (!function_exists('isLoggedIn')) {
+    function isLoggedIn() {
+        return (isset($_SESSION['user_id']) && intval($_SESSION['user_id']) > 0) || 
+               (isset($_SESSION['id']) && intval($_SESSION['id']) > 0);
+    }
 }
 
-// เรียกใช้ทันที
+if (!function_exists('checkLoginStatus')) {
+    function checkLoginStatus() {
+        global $conn;
+        if (isLoggedIn()) {
+            $uid = intval($_SESSION['user_id'] ?? $_SESSION['id']);
+            if (!isset($_SESSION['last_activity_update']) || (time() - $_SESSION['last_activity_update']) > 300) {
+                try {
+                    if (isset($conn) && $conn instanceof mysqli) {
+                        $conn->query("UPDATE users SET last_activity = NOW() WHERE id = $uid");
+                        $_SESSION['last_activity_update'] = time();
+                    }
+                } catch (Exception $e) {
+                    // ป้องกัน 500 Error ถ้ายังไม่ได้สร้างคอลัมน์ last_activity
+                }
+            }
+            return true;
+        }
+        return false;
+    }
+}
 checkLoginStatus();
 
-/**
- * ตรวจสอบสิทธิ์ (Permission Check) แบบเข้มงวด
- */
-function requireRole($allowed_roles) {
-    if (!isLoggedIn()) {
-        // ถ้ายังไม่ล็อกอิน ดีดกลับไปหน้าแรก
-        header("Location: index.php");
-        exit;
-    }
-    
-    if (!is_array($allowed_roles)) {
-        $allowed_roles = [$allowed_roles];
-    }
-    
-    $my_role = $_SESSION['role'] ?? 'guest';
-    
-    // Admin ถือเป็น Developer
-    if ($my_role === 'admin') {
-        $my_role = 'developer';
-    }
+if (!function_exists('requireRole')) {
+    function requireRole($allowed_roles) {
+        if (!isLoggedIn()) {
+            if (!headers_sent()) {
+                header("Location: index.php");
+            } else {
+                echo "<script>window.location.href='index.php';</script>";
+            }
+            exit;
+        }
+        
+        if (!is_array($allowed_roles)) {
+            $allowed_roles = [$allowed_roles];
+        }
+        
+        $my_role = strtolower(trim($_SESSION['role'] ?? 'guest'));
+        
+        $effective_roles = [$my_role];
+        if ($my_role === 'admin') $effective_roles[] = 'developer';
+        if ($my_role === 'developer') $effective_roles[] = 'admin';
 
-    if (!in_array($my_role, $allowed_roles)) {
-        // แสดง Error 403 แบบชัดเจน
-        if (!headers_sent()) http_response_code(403);
-        echo "<!DOCTYPE html><html><body style='background:#f8f9fa; font-family:sans-serif; display:flex; justify-content:center; align-items:center; height:100vh;'>";
-        echo "<div style='background:white; padding:40px; border-radius:10px; box-shadow:0 10px 25px rgba(0,0,0,0.1); text-align:center;'>";
-        echo "<h1 style='color:#dc2626; font-size:40px; margin:0 0 10px 0;'>🚫 Access Denied</h1>";
-        echo "<p style='color:#4b5563; font-size:18px;'>คุณไม่มีสิทธิ์เข้าถึงหน้านี้ (Role: <strong>" . htmlspecialchars($my_role) . "</strong>)</p>";
-        echo "<a href='index.php' style='display:inline-block; margin-top:20px; padding:10px 25px; background:#2563eb; color:white; text-decoration:none; border-radius:30px; font-weight:bold;'>กลับหน้าหลัก</a>";
-        echo "</div></body></html>";
-        exit;
+        $has_access = false;
+        foreach ($effective_roles as $role) {
+            if (in_array($role, $allowed_roles)) {
+                $has_access = true;
+                break;
+            }
+        }
+
+        if (!$has_access) {
+            if (!headers_sent()) http_response_code(403);
+            echo "<!DOCTYPE html><html lang='th'><head><meta charset='UTF-8'><title>Access Denied</title>";
+            echo "<link href='https://fonts.googleapis.com/css2?family=Itim&display=swap' rel='stylesheet'></head>";
+            echo "<body style='background:#f0f4f8; font-family: \"Itim\", cursive; display:flex; justify-content:center; align-items:center; height:100vh; margin:0;'>";
+            echo "<div style='background:white; padding:40px; border-radius:16px; box-shadow:0 10px 30px rgba(0,0,0,0.1); text-align:center; max-width:450px; width:90%; border-top: 5px solid #ef4444;'>";
+            echo "<div style='font-size: 60px; margin-bottom: 10px;'>🚫</div>";
+            echo "<h1 style='color:#dc2626; font-size:32px; margin:0 0 15px 0;'>Access Denied</h1>";
+            echo "<p style='color:#4b5563; font-size:18px;'>คุณไม่มีสิทธิ์เข้าถึงหน้านี้<br>ระดับสิทธิ์ของคุณคือ: <strong style='background:#4f46e5; color:white; padding:4px 12px; border-radius:20px;'>" . htmlspecialchars($my_role) . "</strong></p>";
+            echo "<a href='index.php' style='display:inline-block; margin-top:25px; padding:12px 30px; background:#ef4444; color:white; text-decoration:none; border-radius:30px; font-size: 18px;'>⬅ กลับหน้าหลัก</a>";
+            echo "</div></body></html>";
+            exit;
+        }
     }
 }
 
-/**
- * ดึงข้อมูลผู้ใช้ปัจจุบันแบบปลอดภัย (Safe Fetch)
- */
-function currentUser() {
-    if (!isLoggedIn()) return null;
-    
-    // คืนค่า Default ป้องกัน Array Key Missing
-    return [
-        'id'            => $_SESSION['user_id'] ?? 0,
-        'username'      => $_SESSION['username'] ?? 'Unknown',
-        'display_name'  => $_SESSION['display_name'] ?? 'User',
-        'role'          => $_SESSION['role'] ?? 'student',
-        'class_level'   => $_SESSION['class_level'] ?? ''
-    ];
+if (!function_exists('currentUser')) {
+    function currentUser() {
+        if (!isLoggedIn()) return null;
+        return [
+            'id'            => $_SESSION['user_id'] ?? $_SESSION['id'] ?? 0,
+            'username'      => $_SESSION['username'] ?? 'Unknown',
+            'display_name'  => $_SESSION['display_name'] ?? 'User',
+            'role'          => $_SESSION['role'] ?? 'student',
+            'class_level'   => $_SESSION['class_level'] ?? ''
+        ];
+    }
 }
 ?>

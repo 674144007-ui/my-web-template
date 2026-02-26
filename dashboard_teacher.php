@@ -1,23 +1,25 @@
 <?php
 // dashboard_teacher.php - Teacher Dashboard (Update: Safe SQL & Lab Entry)
-if (ob_get_level() == 0) ob_start();
-session_start();
+
 require_once 'auth.php';
 require_once 'db.php';
-
 requireRole(['teacher', 'developer', 'admin']);
 
-// ดึงข้อมูล User ป้องกันตัวแปรหาย
-$my_id = $_SESSION['user_id'] ?? $_SESSION['id'] ?? 0;
+$my_id = intval($_SESSION['user_id'] ?? $_SESSION['id'] ?? 0);
 if ($my_id == 0) {
     header("Location: index.php");
     exit;
 }
 
-$stmt = $conn->prepare("SELECT * FROM users WHERE id = ?");
-$stmt->bind_param("i", $my_id);
-$stmt->execute();
-$user = $stmt->get_result()->fetch_assoc();
+try {
+    $stmt = $conn->prepare("SELECT * FROM users WHERE id = ?");
+    if (!$stmt) throw new Exception("Prepare Statement Failed: " . $conn->error);
+    $stmt->bind_param("i", $my_id);
+    $stmt->execute();
+    $user = $stmt->get_result()->fetch_assoc();
+} catch (Exception $e) {
+    die("Database Error: โปรดติดต่อ Admin (" . $e->getMessage() . ")");
+}
 
 if (!$user) {
     die("ไม่พบข้อมูลบุคลากรในระบบ กรุณาล็อกอินใหม่");
