@@ -1,50 +1,40 @@
 <?php
-/**
- * ===================================================================================
- * [DATABASE LAYER] FILE: db.php
- * ===================================================================================
- */
-// เปิดการแสดง Error ของ MySQLi แบบเข้มงวด
-mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
+// db.php - เวอร์ชันรองรับ InfinityFree และ Localhost อัตโนมัติ
 
-// ตรวจสอบสภาพแวดล้อม (Local vs Production)
+// 1. ตรวจสอบว่ากำลังรันบน Localhost หรือไม่
 $whitelist = array('127.0.0.1', '::1', 'localhost');
-$isLocal = in_array($_SERVER['REMOTE_ADDR'], $whitelist) || 
-           (isset($_SERVER['HTTP_HOST']) && strpos($_SERVER['HTTP_HOST'], 'localhost') !== false);
+$isLocal = in_array($_SERVER['REMOTE_ADDR'], $whitelist);
 
 if ($isLocal) {
-    // 🏠 Localhost Configuration
+    // 🏠 ตั้งค่าสำหรับ Localhost (เครื่องตัวเอง / MAMP / XAMPP)
     $host   = 'localhost';
     $user   = 'root';
-    $pass   = 'root'; 
+    $pass   = 'root';       // MAMP='root', XAMPP='' (ว่าง)
     $dbname = 'classroom_mgmt';
-    $port   = 8889; 
+    $port   = 8889;         // MAMP=8889, XAMPP=3306
 } else {
-    // ☁️ Production Configuration (InfinityFree)
-    $host   = 'sql206.infinityfree.com';
-    $user   = 'if0_40963793';
-    $pass   = 'O5NG2LRa26znN5X';
-    $dbname = 'if0_40963793_classroom_mgmt';
-    $port   = 3306;
+    // ☁️ ตั้งค่าสำหรับ InfinityFree (ต้องเอาค่าจาก Control Panel มาใส่เอง)
+    // ไปที่ Control Panel -> MySQL Details เพื่อดูค่าเหล่านี้
+    $host   = 'sql206.infinityfree.com';      // ตัวอย่าง: sqlXXX.infinityfree.com
+    $user   = 'if0_40963793';                 // MySQL Username
+    $pass   = 'O5NG2LRa26znN5X';           // รหัสผ่าน (มักจะเป็นรหัสเดียวกับเข้า FTP/VPanel)
+    $dbname = 'if0_40963793_classroom_mgmt';       // ชื่อฐานข้อมูล (ต้องสร้างใน Panel ก่อน)
+    $port   = 3306;                           // พอร์ตมาตรฐาน
 }
 
-try {
-    // สถาปนาการเชื่อมต่อ
-    $conn = new mysqli($host, $user, $pass, $dbname, $port);
-    
-    // บังคับการจัดรูปแบบอักขระให้รองรับภาษาไทย 100%
-    $conn->set_charset("utf8mb4");
-    $conn->query("SET names utf8mb4");
-    $conn->query("SET time_zone = '+07:00'");
+// 2. เริ่มการเชื่อมต่อ
+mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
 
+try {
+    $conn = new mysqli($host, $user, $pass, $dbname, $port);
+    $conn->set_charset("utf8mb4");
 } catch (mysqli_sql_exception $e) {
-    // เก็บประวัติ Error ไว้ใน Server แทนการแสดงรหัสผ่านออกหน้าจอ
-    error_log("Database Critical Error: " . $e->getMessage());
-    
-    // แจ้งเตือนผู้ใช้งานแบบ Clean UI
-    die("<div style='text-align:center; padding:50px; font-family:sans-serif;'>
-            <h2 style='color:#ef4444;'>❌ System Maintenance</h2>
-            <p>ระบบฐานข้อมูลไม่ตอบสนอง กรุณาตรวจสอบไฟล์ db.php หรือการเชื่อมต่อเซิร์ฟเวอร์</p>
-         </div>");
+    // กรณีเชื่อมต่อไม่ได้
+    if ($isLocal) {
+        die("❌ เชื่อมต่อฐานข้อมูล (Local) ไม่ได้: " . $e->getMessage());
+    } else {
+        // บนโฮสต์จริง ไม่ควรโชว์ Error ยาวๆ ให้ User เห็น
+        die("❌ ไม่สามารถเชื่อมต่อฐานข้อมูลได้ (กรุณาตรวจสอบค่า Config ใน db.php)");
+    }
 }
 ?>
