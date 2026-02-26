@@ -1,5 +1,9 @@
 <?php
-// dashboard_student.php - อัปเดตเพิ่มฟีเจอร์เกม และทางเข้า Ultimate Lab
+// ===================================================================================
+// FILE: dashboard_student.php 
+// อัปเดตทางเข้า Ultimate Lab (เต็มรูปแบบ ห้ามย่อ)
+// ===================================================================================
+
 if (ob_get_level() == 0) ob_start();
 session_start();
 require_once 'auth.php';
@@ -7,13 +11,27 @@ require_once 'db.php';
 
 requireRole(['student', 'developer']);
 
-$my_id = $_SESSION['user_id'];
-$user = $conn->query("SELECT * FROM users WHERE id = $my_id")->fetch_assoc();
+// ป้องกันตัวแปรว่างแล้วทำให้ SQL แครช (ดักจับ Session)
+$my_id = $_SESSION['user_id'] ?? $_SESSION['id'] ?? 0;
+if ($my_id == 0) {
+    header("Location: index.php");
+    exit;
+}
+
+// ใช้ Prepared Statement ดึงข้อมูลให้ปลอดภัย ไม่ให้เกิด Syntax Error
+$stmt = $conn->prepare("SELECT * FROM users WHERE id = ?");
+$stmt->bind_param("i", $my_id);
+$stmt->execute();
+$user = $stmt->get_result()->fetch_assoc();
+
+if (!$user) {
+    die("ไม่พบข้อมูลนักเรียนในระบบ กรุณาล็อกอินใหม่");
+}
 
 // เช็คกิลด์
 $has_guild = !empty($user['guild_id']);
 if (!$has_guild && !isset($_GET['skip_sort'])) {
-    header("Location: guild_selection.php"); // บังคับไปหน้าคัดเลือกบ้านก่อน
+    header("Location: guild_selection.php"); 
     exit;
 }
 
@@ -29,41 +47,171 @@ $is_sim = (isset($_SESSION['dev_simulation_mode']) || (isset($_SESSION['original
 <title>Student Dashboard</title>
 <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;700&display=swap" rel="stylesheet">
 <style>
-    body { margin:0; padding:30px; font-family:"Sarabun",sans-serif; background:#f0f2f5; }
+    body { 
+        margin: 0; 
+        padding: 30px; 
+        font-family: "Sarabun", sans-serif; 
+        background: #f0f2f5; 
+    }
     
-    /* Topbar */
-    .topbar { display:flex; justify-content:space-between; align-items:center; margin-bottom:30px; background: white; padding: 15px 25px; border-radius: 15px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); }
-    .profile-widget { display: flex; align-items: center; gap: 15px; }
-    .profile-info { text-align: right; }
-    .profile-name { font-weight: bold; color: #1e293b; display: block; }
-    .xp-badge { font-size: 0.8rem; background: #fbbf24; color: #78350f; padding: 2px 8px; border-radius: 10px; font-weight: bold; }
-    .avatar-img { width: 50px; height: 50px; border-radius: 50%; border: 2px solid #e2e8f0; object-fit: cover; }
-    
-    .logout-btn { color: #ef4444; text-decoration: none; border: 1px solid #ef4444; padding: 5px 10px; border-radius: 8px; font-size: 0.9rem; margin-left: 10px; transition: 0.2s; }
-    .logout-btn:hover { background: #ef4444; color: white; }
+    .topbar { 
+        display: flex; 
+        justify-content: space-between; 
+        align-items: center; 
+        margin-bottom: 30px; 
+        background: white; 
+        padding: 15px 25px; 
+        border-radius: 15px; 
+        box-shadow: 0 4px 10px rgba(0,0,0,0.05); 
+    }
 
-    /* Grid */
-    .card-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(250px,1fr)); gap:25px; margin-top: 20px; }
-    .card { background:white; padding:25px; border-radius:15px; box-shadow:0 4px 10px rgba(0,0,0,0.05); transition:0.3s; text-align:center; border:1px solid #e2e8f0; position:relative; overflow:hidden; }
-    .card:hover { transform:translateY(-5px); box-shadow:0 10px 20px rgba(0,0,0,0.1); }
-    .btn { display:block; width:100%; padding:10px 0; margin-top:15px; background:#3b82f6; color:white; text-decoration:none; border-radius:8px; font-weight:bold; transition: 0.2s; }
-    .btn:hover { filter: brightness(1.1); }
+    .profile-widget { 
+        display: flex; 
+        align-items: center; 
+        gap: 15px; 
+    }
+
+    .profile-info { 
+        text-align: right; 
+    }
+
+    .profile-name { 
+        font-weight: bold; 
+        color: #1e293b; 
+        display: block; 
+    }
+
+    .xp-badge { 
+        font-size: 0.8rem; 
+        background: #fbbf24; 
+        color: #78350f; 
+        padding: 2px 8px; 
+        border-radius: 10px; 
+        font-weight: bold; 
+    }
+
+    .avatar-img { 
+        width: 50px; 
+        height: 50px; 
+        border-radius: 50%; 
+        border: 2px solid #e2e8f0; 
+        object-fit: cover; 
+    }
     
-    .c-profile { background: linear-gradient(135deg, #1e293b, #0f172a); color:white; }
-    .c-profile .btn { background:#fbbf24; color:black; }
+    .logout-btn { 
+        color: #ef4444; 
+        text-decoration: none; 
+        border: 1px solid #ef4444; 
+        padding: 5px 10px; 
+        border-radius: 8px; 
+        font-size: 0.9rem; 
+        margin-left: 10px; 
+        transition: 0.2s; 
+    }
+
+    .logout-btn:hover { 
+        background: #ef4444; 
+        color: white; 
+    }
+
+    .card-grid { 
+        display: grid; 
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); 
+        gap: 25px; 
+        margin-top: 20px; 
+    }
+
+    .card { 
+        background: white; 
+        padding: 25px; 
+        border-radius: 15px; 
+        box-shadow: 0 4px 10px rgba(0,0,0,0.05); 
+        transition: 0.3s; 
+        text-align: center; 
+        border: 1px solid #e2e8f0; 
+        position: relative; 
+        overflow: hidden; 
+    }
+
+    .card:hover { 
+        transform: translateY(-5px); 
+        box-shadow: 0 10px 20px rgba(0,0,0,0.1); 
+    }
+
+    .btn { 
+        display: block; 
+        width: 100%; 
+        padding: 10px 0; 
+        margin-top: 15px; 
+        background: #3b82f6; 
+        color: white; 
+        text-decoration: none; 
+        border-radius: 8px; 
+        font-weight: bold; 
+        transition: 0.2s; 
+    }
+
+    .btn:hover { 
+        filter: brightness(1.1); 
+    }
     
-    .c-daily { background: linear-gradient(135deg, #7c3aed, #4c1d95); color:white; }
-    .c-daily .btn { background:#a78bfa; color:white; }
+    .c-profile { 
+        background: linear-gradient(135deg, #1e293b, #0f172a); 
+        color: white; 
+    }
+
+    .c-profile .btn { 
+        background: #fbbf24; 
+        color: black; 
+    }
     
-    .c-leader { background: linear-gradient(135deg, #f59e0b, #b45309); color:white; }
+    .c-daily { 
+        background: linear-gradient(135deg, #7c3aed, #4c1d95); 
+        color: white; 
+    }
+
+    .c-daily .btn { 
+        background: #a78bfa; 
+        color: white; 
+    }
     
-    /* สไตล์พิเศษสำหรับห้องแล็บ */
-    .c-lab { background: linear-gradient(135deg, #0f172a, #334155); color:white; border: 1px solid #38bdf8; box-shadow: 0 0 15px rgba(56, 189, 248, 0.2); }
-    .c-lab h3 { color: #38bdf8; text-shadow: 0 0 5px rgba(56, 189, 248, 0.5); }
-    .c-lab p { color: #cbd5e1; }
-    .c-lab .btn { background: linear-gradient(135deg, #38bdf8, #0ea5e9); color:#0f172a; box-shadow: 0 4px 10px rgba(56, 189, 248, 0.4); text-transform: uppercase; letter-spacing: 1px;}
+    .c-leader { 
+        background: linear-gradient(135deg, #f59e0b, #b45309); 
+        color: white; 
+    }
     
-    .sim-bar { background: #ef4444; color: white; padding: 10px; text-align: center; margin-bottom: 20px; border-radius: 8px; }
+    .c-lab { 
+        background: linear-gradient(135deg, #0f172a, #334155); 
+        color: white; 
+        border: 1px solid #38bdf8; 
+        box-shadow: 0 0 15px rgba(56, 189, 248, 0.2); 
+    }
+
+    .c-lab h3 { 
+        color: #38bdf8; 
+        text-shadow: 0 0 5px rgba(56, 189, 248, 0.5); 
+    }
+
+    .c-lab p { 
+        color: #cbd5e1; 
+    }
+
+    .c-lab .btn { 
+        background: linear-gradient(135deg, #38bdf8, #0ea5e9); 
+        color: #0f172a; 
+        box-shadow: 0 4px 10px rgba(56, 189, 248, 0.4); 
+        text-transform: uppercase; 
+        letter-spacing: 1px;
+    }
+    
+    .sim-bar { 
+        background: #ef4444; 
+        color: white; 
+        padding: 10px; 
+        text-align: center; 
+        margin-bottom: 20px; 
+        border-radius: 8px; 
+    }
 </style>
 </head>
 <body>

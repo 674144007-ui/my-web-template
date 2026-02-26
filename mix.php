@@ -2,9 +2,10 @@
 // ===================================================================================
 // FILE: mix.php (FULL VERSION - ULTIMATE SURVIVAL LAB)
 // ===================================================================================
-// ระบบห้องปฏิบัติการเคมีเสมือนจริง 
-// (แก้ไขบัค: ปรับวิธีดึงข้อมูล User Session เพื่อให้นักเรียนและครูเข้าใช้งานได้ 100%)
+// อัปเดต: แก้ไขบัคคำสั่ง SQL ชนกัน และแยกส่วน 3D Script ป้องกันระบบหน้าจอค้าง
 // ===================================================================================
+
+ob_start(); // เปิด Buffer ป้องกันปัญหา Headers already sent
 
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
@@ -18,14 +19,17 @@ if (function_exists('requireRole')) {
     requireRole(['student', 'teacher', 'developer', 'admin', 'parent']);
 }
 
-// 2. ดึงข้อมูลผู้ใช้งานปัจจุบัน (แก้ไขบัคจาก currentUser() เป็นตัวแปร Session ปกติ)
-// รองรับตัวแปร $uid ที่มาจาก auth.php หรือรูปแบบ $_SESSION มาตรฐาน
-$user_id = isset($uid) ? $uid : ($_SESSION['user_id'] ?? $_SESSION['id'] ?? $_SESSION['uid'] ?? 0);
+// 2. ดึงข้อมูลผู้ใช้งานปัจจุบันอย่างปลอดภัยที่สุด
+$user_id = $_SESSION['user_id'] ?? $_SESSION['id'] ?? 0;
 $role = $_SESSION['role'] ?? '';
 $class_level = $_SESSION['class_level'] ?? '';
 
-// ดึงข้อมูล Role และ Class Level ที่แน่นอนจากฐานข้อมูลเพื่อความชัวร์ (ป้องกัน Session ไม่ครบ)
-if ($user_id > 0) {
+if ($user_id <= 0) {
+    die("Session หมดอายุ หรือ ไม่พบข้อมูลผู้ใช้ กรุณาล็อกอินใหม่อีกครั้ง");
+}
+
+// หากไม่พบข้อมูล Class Level ใน Session ให้ดึงจากฐานข้อมูลเพื่อความชัวร์ 
+if (empty($class_level)) {
     $stmt_user = $conn->prepare("SELECT role, class_level FROM users WHERE id = ?");
     if ($stmt_user) {
         $stmt_user->bind_param("i", $user_id);
@@ -36,6 +40,7 @@ if ($user_id > 0) {
             $role = $u_data['role'];
             $class_level = $u_data['class_level'];
         }
+        $stmt_user->close();
     }
 }
 
@@ -44,9 +49,13 @@ if ($user_id > 0) {
 // ===================================================================================
 
 if (isset($_GET['action'])) {
-    header('Content-Type: application/json');
+    
+    // สำคัญมาก: ล้าง Output ขยะที่อาจหลุดมาจากไฟล์อื่นก่อนส่ง JSON ป้องกันจอขาว
+    while (ob_get_level()) { ob_end_clean(); }
+
+    header('Content-Type: application/json; charset=utf-8');
     ini_set('display_errors', 0);
-    error_reporting(E_ALL);
+    error_reporting(0); // ปิดการโชว์ Error ฝั่ง Server ป้องกัน JSON พัง
 
     try {
         // --- API: get_chemicals (ดึงรายชื่อสารเคมีไปแสดงใน Dropdown) ---
@@ -77,22 +86,22 @@ if (isset($_GET['action'])) {
         if ($_GET['action'] === 'mix') {
             
             // Helper: แปลงรหัสสี Hex เป็นชื่อสีภาษาไทยเพื่อให้แสดงผลสวยงาม
-            function getThaiColorName($hex) {
+            $getThaiColorName = function($hex) {
                 $hex = strtoupper(ltrim($hex, '#'));
                 $map = [
-                    'FFFFFF' => 'สีขาวใส / ไม่มีสี', '000000' => 'สีดำ / มืด',
+                    'FFFFFF' => 'สีขาวใส / ไม่มีสี', '000000' => 'สีดำ / มืดเขม่า',
                     'FF0000' => 'สีแดงสด', '00FF00' => 'สีเขียวสด', '0000FF' => 'สีน้ำเงิน',
                     'FFFF00' => 'สีเหลือง', 'FFA500' => 'สีส้ม', '800080' => 'สีม่วง',
                     'C0C0C0' => 'สีเงิน / เทา', '3B82F6' => 'สีฟ้าสดใส',
                     'FEF08A' => 'สีเหลืองอ่อน', '1D4ED8' => 'สีน้ำเงินเข้ม'
                 ];
-                return isset($map[$hex]) ? $map[$hex] : "สีผสม (รหัส: #$hex)";
-            }
+                return $map[$hex] ?? "สีผสม (รหัส: #$hex)";
+            };
 
             // Helper: คำนวณสีผสมแบบเฉลี่ยน้ำหนักตามปริมาตร (Volume)
-            function mixColorsWeighted($hex1, $vol1, $hex2, $vol2) {
-                $hex1 = ($hex1 && $hex1 != '') ? ltrim($hex1, '#') : 'FFFFFF';
-                $hex2 = ($hex2 && $hex2 != '') ? ltrim($hex2, '#') : 'FFFFFF';
+            $mixColorsWeighted = function($hex1, $vol1, $hex2, $vol2) {
+                $hex1 = !empty($hex1) ? ltrim($hex1, '#') : 'FFFFFF';
+                $hex2 = !empty($hex2) ? ltrim($hex2, '#') : 'FFFFFF';
                 
                 if(strlen($hex1)==3) $hex1 = $hex1[0].$hex1[0].$hex1[1].$hex1[1].$hex1[2].$hex1[2];
                 if(strlen($hex2)==3) $hex2 = $hex2[0].$hex2[0].$hex2[1].$hex2[1].$hex2[2].$hex2[2];
@@ -108,7 +117,7 @@ if (isset($_GET['action'])) {
                 $b = round(($b1 * $vol1 + $b2 * $vol2) / $totalVol);
 
                 return sprintf("#%02x%02x%02x", $r, $g, $b);
-            }
+            };
 
             // รับค่า ID และปริมาตรจากผู้ใช้
             $id_a = isset($_GET['a']) ? intval($_GET['a']) : 0;
@@ -116,7 +125,9 @@ if (isset($_GET['action'])) {
             $vol_a = isset($_GET['volA']) ? floatval($_GET['volA']) : 0;
             $vol_b = isset($_GET['volB']) ? floatval($_GET['volB']) : 0;
 
-            if ($id_a <= 0 || $id_b <= 0) throw new Exception("กรุณาเลือกสารเคมีให้ถูกต้องทั้ง 2 หลอด");
+            if ($id_a <= 0 || $id_b <= 0) {
+                throw new Exception("กรุณาเลือกสารเคมีให้ถูกต้องทั้ง 2 หลอด");
+            }
 
             // ดึงข้อมูลสารเคมีจากตาราง chemicals
             $stmt = $conn->prepare("SELECT id, name, formula, type, color_neutral, toxicity, state FROM chemicals WHERE id IN (?, ?)");
@@ -128,9 +139,10 @@ if (isset($_GET['action'])) {
             while ($row = $res->fetch_assoc()) {
                 $chemicals[$row['id']] = $row;
             }
+            $stmt->close();
 
-            if (!isset($chemicals[$id_a])) throw new Exception("ไม่พบข้อมูลสาร A ในคลังข้อมูล (ID: $id_a)");
-            if (!isset($chemicals[$id_b])) throw new Exception("ไม่พบข้อมูลสาร B ในคลังข้อมูล (ID: $id_b)");
+            if (!isset($chemicals[$id_a])) throw new Exception("ไม่พบข้อมูลสาร A ในคลังข้อมูล");
+            if (!isset($chemicals[$id_b])) throw new Exception("ไม่พบข้อมูลสาร B ในคลังข้อมูล");
 
             $cA = $chemicals[$id_a];
             $cB = $chemicals[$id_b];
@@ -138,7 +150,7 @@ if (isset($_GET['action'])) {
             // 1. คำนวณค่าสถานะเบื้องต้นของการผสม (สมมติว่าไม่มีปฏิกิริยา)
             $total_volume = $vol_a + $vol_b;
             $final_temp = 25.0; // อุณหภูมิห้อง
-            $result_color = mixColorsWeighted($cA['color_neutral'], $vol_a, $cB['color_neutral'], $vol_b);
+            $result_color = $mixColorsWeighted($cA['color_neutral'], $vol_a, $cB['color_neutral'], $vol_b);
             
             $product_name = "สารละลายผสม (" . $cA['name'] . " + " . $cB['name'] . ")";
             $product_formula = "-";
@@ -151,11 +163,11 @@ if (isset($_GET['action'])) {
             $bubble_color = "#FFFFFF";
 
             // 2. ตรวจสอบว่ามีสูตรปฏิกิริยาพิเศษใน Database หรือไม่ (เช็คแบบสลับตำแหน่ง A,B และ B,A)
-            $sql_react = "SELECT * FROM reactions WHERE (chem1_id=? AND chem2_id=?) OR (chem1_id=? AND chem2_id=?) LIMIT 1";
-            $stmt2 = $conn->prepare($sql_react);
+            $stmt2 = $conn->prepare("SELECT * FROM reactions WHERE (chem1_id=? AND chem2_id=?) OR (chem1_id=? AND chem2_id=?) LIMIT 1");
             $stmt2->bind_param("iiii", $id_a, $id_b, $id_b, $id_a);
             $stmt2->execute();
             $react = $stmt2->get_result()->fetch_assoc();
+            $stmt2->close();
 
             if ($react) {
                 // อัปเดตข้อมูลผลิตภัณฑ์จากตาราง reactions
@@ -178,7 +190,7 @@ if (isset($_GET['action'])) {
                     $effect_type = "explosion";
                     $result_color = "#222222"; // สีดำเขม่าควัน
                     $damage_player = 100; // ระเบิด ดาเมจเต็ม 100
-                    $product_name .= " (BOOM! เกิดการระเบิด)";
+                    $product_name .= " (💥 เกิดการระเบิดอย่างรุนแรง)";
                 } elseif ($damage_player >= 50 && $final_state === 'gas') {
                     // หากมีพิษสูงและฟุ้งกระจายเป็นแก๊ส ถือว่าเป็น Event แก๊สพิษ
                     $effect_type = "toxic_gas";
@@ -187,7 +199,7 @@ if (isset($_GET['action'])) {
                 // กรณีนักเรียนผสมสารชนิดเดียวกัน (เท A ลง A)
                 if ($id_a == $id_b) {
                     $product_name = $cA['name'];
-                    $product_formula = $cA['formula'];
+                    $product_formula = $cA['formula'] ?? "-";
                 }
             }
 
@@ -196,7 +208,7 @@ if (isset($_GET['action'])) {
                 "success" => true,
                 "product_name" => $product_name,
                 "product_formula" => $product_formula,
-                "color_name_thai" => getThaiColorName($result_color),
+                "color_name_thai" => $getThaiColorName($result_color),
                 "special_color" => $result_color,
                 "liquid_color" => $result_color,
                 "bubble_color" => $bubble_color,
@@ -209,6 +221,7 @@ if (isset($_GET['action'])) {
                 "damage_player" => $damage_player,
                 "effect_type" => $effect_type
             ]);
+            exit;
         }
 
     } catch (Exception $e) {
@@ -234,60 +247,49 @@ if ($role === 'student') {
     $dashboard_link = "dashboard_parent.php";
 }
 
+// -------------------------------------------------------------
+// แก้ไขบัค SQL: ใช้ LEFT JOIN รวบเดียวจบ ป้องกัน Commands out of sync
+// -------------------------------------------------------------
 $quests = [];
 
-// ดึงข้อมูล Quest สำหรับ 'นักเรียน' ตามระดับชั้น
 if ($role === 'student' && !empty($class_level)) {
     $stmt = $conn->prepare("
-        SELECT q.*, c.name as target_chem_name 
-        FROM quests q 
+        SELECT q.id, q.title, q.description, q.xp_reward, q.gold_reward, 
+               c.name AS target_chem_name,
+               IFNULL(sqp.status, 'pending') AS status
+        FROM quests q
         LEFT JOIN chemicals c ON q.target_chem_id = c.id
-        WHERE q.assigned_class = ? 
+        LEFT JOIN student_quest_progress sqp ON sqp.quest_id = q.id AND sqp.student_id = ?
+        WHERE q.assigned_class = ?
         ORDER BY q.created_at DESC
     ");
     if ($stmt) {
-        $stmt->bind_param("s", $class_level);
+        $stmt->bind_param("is", $user_id, $class_level);
         $stmt->execute();
-        $quests_result = $stmt->get_result();
-        
-        while ($row = $quests_result->fetch_assoc()) {
-            $q_id = $row['id'];
-            // ตรวจสอบความคืบหน้าว่านักเรียนทำผ่านหรือยัง
-            $stmt_prog = $conn->prepare("SELECT status FROM student_quest_progress WHERE student_id = ? AND quest_id = ?");
-            if ($stmt_prog) {
-                $stmt_prog->bind_param("ii", $user_id, $q_id);
-                $stmt_prog->execute();
-                $prog_res = $stmt_prog->get_result();
-                
-                if ($prog_res && $prog_res->num_rows > 0) {
-                    $prog_row = $prog_res->fetch_assoc();
-                    $row['status'] = $prog_row['status'];
-                } else {
-                    $row['status'] = 'pending';
-                }
-            }
+        $res = $stmt->get_result();
+        while ($row = $res->fetch_assoc()) {
             $quests[] = $row;
         }
+        $stmt->close();
     }
-} 
-// ดึงข้อมูล Quest สำหรับ 'ครู' (ดึงเควสต์ที่ครูคนนี้สร้างเองมาดูตัวอย่าง)
-else if ($role === 'teacher') {
+} else if ($role === 'teacher') {
     $stmt = $conn->prepare("
-        SELECT q.*, c.name as target_chem_name 
-        FROM quests q 
+        SELECT q.id, q.title, q.description, q.xp_reward, q.gold_reward, 
+               c.name AS target_chem_name,
+               'teacher_preview' AS status
+        FROM quests q
         LEFT JOIN chemicals c ON q.target_chem_id = c.id
-        WHERE q.teacher_id = ? 
+        WHERE q.teacher_id = ?
         ORDER BY q.created_at DESC
     ");
     if ($stmt) {
         $stmt->bind_param("i", $user_id);
         $stmt->execute();
-        $quests_result = $stmt->get_result();
-        
-        while ($row = $quests_result->fetch_assoc()) {
-            $row['status'] = 'teacher_preview'; // ป้ายกำกับสถานะพิเศษสำหรับครู
+        $res = $stmt->get_result();
+        while ($row = $res->fetch_assoc()) {
             $quests[] = $row;
         }
+        $stmt->close();
     }
 }
 ?>
@@ -314,7 +316,7 @@ else if ($role === 'teacher') {
             padding: 0; 
             min-height: 100vh;
             background-image: url('images_bg.png'); 
-            background-color: #1e293b; /* Fallback color */
+            background-color: #1e293b; 
             background-size: cover;
             background-position: center;
             background-attachment: fixed;
@@ -361,6 +363,7 @@ else if ($role === 'teacher') {
             transition: transform 0.2s, background 0.2s;
             border: 2px solid rgba(255,255,255,0.5);
         }
+
         .btn-back:hover { 
             transform: scale(1.05); 
             background: #dc2626; 
@@ -373,6 +376,7 @@ else if ($role === 'teacher') {
             gap: 20px; 
             margin-bottom: 20px; 
         }
+
         .input-wrapper {
             display: flex;
             flex-direction: column;
@@ -382,27 +386,39 @@ else if ($role === 'teacher') {
             border-radius: 12px;
             border: 1px solid #cbd5e1;
         }
+
         .input-wrapper label {
             font-weight: bold;
             color: #334155;
         }
+
         .chem-selector-row {
             display: flex;
             gap: 5px;
             align-items: stretch;
         }
+
         .ts-wrapper {
             flex-grow: 1; 
         }
         
         .btn-periodic-trigger {
             background: #475569;
-            color: white; border: none; border-radius: 8px;
-            padding: 0 10px; cursor: pointer; font-size: 14px;
-            white-space: nowrap; transition: background 0.2s;
-            display: flex; align-items: center;
+            color: white; 
+            border: none; 
+            border-radius: 8px;
+            padding: 0 10px; 
+            cursor: pointer; 
+            font-size: 14px;
+            white-space: nowrap; 
+            transition: background 0.2s;
+            display: flex; 
+            align-items: center;
         }
-        .btn-periodic-trigger:hover { background: #334155; }
+
+        .btn-periodic-trigger:hover { 
+            background: #334155; 
+        }
         
         select, input, button {
             font-family: 'Itim', cursive; 
@@ -428,9 +444,22 @@ else if ($role === 'teacher') {
             border-radius: 12px;
             margin-top: 10px;
         }
-        button#mix-button:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(168, 85, 247, 0.6); }
-        button#mix-button:active { transform: translateY(1px); }
-        button:disabled { background: #94a3b8; cursor: not-allowed; transform: none; box-shadow: none; }
+
+        button#mix-button:hover { 
+            transform: translateY(-2px); 
+            box-shadow: 0 6px 20px rgba(168, 85, 247, 0.6); 
+        }
+
+        button#mix-button:active { 
+            transform: translateY(1px); 
+        }
+
+        button:disabled { 
+            background: #94a3b8; 
+            cursor: not-allowed; 
+            transform: none; 
+            box-shadow: none; 
+        }
 
         #viewer3d {
             height: 400px; 
@@ -452,11 +481,15 @@ else if ($role === 'teacher') {
             border-left: 6px solid #a855f7;
             font-size: 16px; 
             line-height: 1.6;
-            display: none; /* ซ่อนไว้ก่อนจนกว่าจะผสม */
+            display: none; 
             animation: fadeIn 0.5s ease;
             box-shadow: 0 4px 6px rgba(0,0,0,0.05);
         }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+        @keyframes fadeIn { 
+            from { opacity: 0; transform: translateY(10px); } 
+            to { opacity: 1; transform: translateY(0); } 
+        }
         
         .res-row { 
             display: flex; 
@@ -464,7 +497,11 @@ else if ($role === 'teacher') {
             border-bottom: 1px dashed #cbd5e1; 
             padding: 8px 0; 
         }
-        .res-row:last-child { border-bottom: none; }
+
+        .res-row:last-child { 
+            border-bottom: none; 
+        }
+
         .res-val { 
             font-weight: bold; 
             color: #4f46e5; 
@@ -472,59 +509,220 @@ else if ($role === 'teacher') {
 
         /* --- CSS แถบสถานะฝั่งขวา --- */
         .status-panel {
-            position: fixed; top: 20px; right: 20px; width: 260px;
-            background: rgba(15, 23, 42, 0.85); padding: 15px; border-radius: 12px;
-            color: white; z-index: 1000; box-shadow: 0 5px 15px rgba(0,0,0,0.5); backdrop-filter: blur(8px);
+            position: fixed; 
+            top: 20px; 
+            right: 20px; 
+            width: 260px;
+            background: rgba(15, 23, 42, 0.85); 
+            padding: 15px; 
+            border-radius: 12px;
+            color: white; 
+            z-index: 1000; 
+            box-shadow: 0 5px 15px rgba(0,0,0,0.5); 
+            backdrop-filter: blur(8px);
             border: 1px solid rgba(255,255,255,0.1);
         }
-        .bar-row { margin-bottom: 12px; }
-        .bar-label { font-size: 14px; margin-bottom: 6px; display: flex; justify-content: space-between; font-weight: bold;}
-        .progress-track { width: 100%; height: 14px; background: #334155; border-radius: 8px; overflow: hidden; border: 1px solid #1e293b; }
-        .progress-fill { height: 100%; width: 100%; transition: width 0.5s ease, background-color 0.5s ease; }
-        #beaker-bar { background: #38bdf8; box-shadow: 0 0 10px rgba(56,189,248,0.5); }
-        #health-bar { background: #4ade80; box-shadow: 0 0 10px rgba(74,222,128,0.5); }
-        button.reset-btn {
-            background: #ef4444; color: white; border: none; margin-top: 10px; font-size: 15px; padding: 10px; width: 100%; cursor: pointer; border-radius: 8px; font-weight: bold; transition: background 0.2s;
+
+        .bar-row { 
+            margin-bottom: 12px; 
         }
-        button.reset-btn:hover { background: #dc2626; }
+
+        .bar-label { 
+            font-size: 14px; 
+            margin-bottom: 6px; 
+            display: flex; 
+            justify-content: space-between; 
+            font-weight: bold;
+        }
+
+        .progress-track { 
+            width: 100%; 
+            height: 14px; 
+            background: #334155; 
+            border-radius: 8px; 
+            overflow: hidden; 
+            border: 1px solid #1e293b; 
+        }
+
+        .progress-fill { 
+            height: 100%; 
+            width: 100%; 
+            transition: width 0.5s ease, background-color 0.5s ease; 
+        }
+
+        #beaker-bar { 
+            background: #38bdf8; 
+            box-shadow: 0 0 10px rgba(56,189,248,0.5); 
+        }
+
+        #health-bar { 
+            background: #4ade80; 
+            box-shadow: 0 0 10px rgba(74,222,128,0.5); 
+        }
+
+        button.reset-btn {
+            background: #ef4444; 
+            color: white; 
+            border: none; 
+            margin-top: 10px; 
+            font-size: 15px; 
+            padding: 10px; 
+            width: 100%; 
+            cursor: pointer; 
+            border-radius: 8px; 
+            font-weight: bold; 
+            transition: background 0.2s;
+        }
+
+        button.reset-btn:hover { 
+            background: #dc2626; 
+        }
 
         /* --- CSS กระดานภารกิจ ฝั่งซ้าย --- */
         .quest-panel {
-            position: fixed; top: 20px; left: 20px; width: 280px;
-            background: rgba(15, 23, 42, 0.85); padding: 15px; border-radius: 12px;
-            color: white; z-index: 1000; box-shadow: 0 5px 15px rgba(0,0,0,0.5); backdrop-filter: blur(8px);
-            max-height: 90vh; overflow-y: auto;
+            position: fixed; 
+            top: 20px; 
+            left: 20px; 
+            width: 280px;
+            background: rgba(15, 23, 42, 0.85); 
+            padding: 15px; 
+            border-radius: 12px;
+            color: white; 
+            z-index: 1000; 
+            box-shadow: 0 5px 15px rgba(0,0,0,0.5); 
+            backdrop-filter: blur(8px);
+            max-height: 90vh; 
+            overflow-y: auto;
             border: 1px solid rgba(255,255,255,0.1);
         }
-        .quest-panel::-webkit-scrollbar { width: 6px; }
-        .quest-panel::-webkit-scrollbar-thumb { background: #475569; border-radius: 3px; }
-        
-        .quest-panel h3 { margin-top: 0; color: #fde047; font-size: 20px; border-bottom: 1px solid #334155; padding-bottom: 10px; display: flex; align-items: center; gap: 8px;}
-        .quest-card { background: rgba(255,255,255,0.05); border-radius: 8px; padding: 12px; margin-bottom: 12px; border: 1px solid #334155; transition: transform 0.2s; }
-        .quest-card:hover { transform: translateX(5px); background: rgba(255,255,255,0.08); }
-        .quest-title { font-weight: bold; font-size: 16px; color: #60a5fa; margin-bottom: 6px; }
-        .quest-desc { font-size: 13px; color: #cbd5e1; margin-bottom: 10px; line-height: 1.4; }
-        .quest-target { font-size: 14px; font-weight: bold; color: #34d399; margin-bottom: 6px; }
-        .quest-rewards { font-size: 13px; color: #fbbf24; margin-bottom: 10px; font-weight: bold; }
-        .quest-badge { display: inline-block; padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: bold; }
-        .quest-badge.completed { background: rgba(16, 185, 129, 0.2); color: #34d399; border: 1px solid #10b981; }
-        .quest-badge.pending { background: rgba(245, 158, 11, 0.2); color: #fbbf24; border: 1px solid #f59e0b; }
-        .quest-badge.teacher_preview { background: rgba(99, 102, 241, 0.2); color: #818cf8; border: 1px solid #6366f1; }
 
-        .ts-dropdown { z-index: 99999 !important; font-family: 'Itim', cursive; }
+        .quest-panel::-webkit-scrollbar { 
+            width: 6px; 
+        }
+
+        .quest-panel::-webkit-scrollbar-thumb { 
+            background: #475569; 
+            border-radius: 3px; 
+        }
+        
+        .quest-panel h3 { 
+            margin-top: 0; 
+            color: #fde047; 
+            font-size: 20px; 
+            border-bottom: 1px solid #334155; 
+            padding-bottom: 10px; 
+            display: flex; 
+            align-items: center; 
+            gap: 8px;
+        }
+
+        .quest-card { 
+            background: rgba(255,255,255,0.05); 
+            border-radius: 8px; 
+            padding: 12px; 
+            margin-bottom: 12px; 
+            border: 1px solid #334155; 
+            transition: transform 0.2s; 
+        }
+
+        .quest-card:hover { 
+            transform: translateX(5px); 
+            background: rgba(255,255,255,0.08); 
+        }
+
+        .quest-title { 
+            font-weight: bold; 
+            font-size: 16px; 
+            color: #60a5fa; 
+            margin-bottom: 6px; 
+        }
+
+        .quest-desc { 
+            font-size: 13px; 
+            color: #cbd5e1; 
+            margin-bottom: 10px; 
+            line-height: 1.4; 
+        }
+
+        .quest-target { 
+            font-size: 14px; 
+            font-weight: bold; 
+            color: #34d399; 
+            margin-bottom: 6px; 
+        }
+
+        .quest-rewards { 
+            font-size: 13px; 
+            color: #fbbf24; 
+            margin-bottom: 10px; 
+            font-weight: bold; 
+        }
+
+        .quest-badge { 
+            display: inline-block; 
+            padding: 4px 10px; 
+            border-radius: 12px; 
+            font-size: 12px; 
+            font-weight: bold; 
+        }
+
+        .quest-badge.completed { 
+            background: rgba(16, 185, 129, 0.2); 
+            color: #34d399; 
+            border: 1px solid #10b981; 
+        }
+
+        .quest-badge.pending { 
+            background: rgba(245, 158, 11, 0.2); 
+            color: #fbbf24; 
+            border: 1px solid #f59e0b; 
+        }
+
+        .quest-badge.teacher_preview { 
+            background: rgba(99, 102, 241, 0.2); 
+            color: #818cf8; 
+            border: 1px solid #6366f1; 
+        }
+
+        .ts-dropdown { 
+            z-index: 99999 !important; 
+            font-family: 'Itim', cursive; 
+        }
 
         /* --- CSS Effect หน้าจอแตก/พิษ --- */
         #broken-overlay {
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            position: fixed; 
+            top: 0; 
+            left: 0; 
+            width: 100%; 
+            height: 100%;
             background-image: url('https://upload.wikimedia.org/wikipedia/commons/thumb/4/4e/Broken_glass.png/800px-Broken_glass.png'); 
-            background-size: cover; pointer-events: none; opacity: 0; transition: opacity 0.1s; z-index: 9999; mix-blend-mode: multiply;
+            background-size: cover; 
+            pointer-events: none; 
+            opacity: 0; 
+            transition: opacity 0.1s; 
+            z-index: 9999; 
+            mix-blend-mode: multiply;
         }
+
         #toxic-overlay {
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            position: fixed; 
+            top: 0; 
+            left: 0; 
+            width: 100%; 
+            height: 100%;
             background: radial-gradient(circle, transparent 20%, rgba(34, 197, 94, 0.7) 90%);
-            pointer-events: none; opacity: 0; transition: opacity 1.5s ease; z-index: 9998; mix-blend-mode: hard-light;
+            pointer-events: none; 
+            opacity: 0; 
+            transition: opacity 1.5s ease; 
+            z-index: 9998; 
+            mix-blend-mode: hard-light;
         }
-        .shake { animation: shake 0.5s cubic-bezier(.36,.07,.19,.97) both; }
+
+        .shake { 
+            animation: shake 0.5s cubic-bezier(.36,.07,.19,.97) both; 
+        }
+
         @keyframes shake {
             10%, 90% { transform: translate3d(-4px, 0, 0); }
             20%, 80% { transform: translate3d(6px, 0, 0); }
@@ -537,35 +735,115 @@ else if ($role === 'teacher') {
            ========================================= */
         .periodic-modal-overlay {
             display: none; 
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background-color: rgba(15, 23, 42, 0.9); z-index: 10000;
-            justify-content: center; align-items: center; padding: 20px; box-sizing: border-box; overflow: auto;
+            position: fixed; 
+            top: 0; 
+            left: 0; 
+            width: 100%; 
+            height: 100%;
+            background-color: rgba(15, 23, 42, 0.9); 
+            z-index: 10000;
+            justify-content: center; 
+            align-items: center; 
+            padding: 20px; 
+            box-sizing: border-box; 
+            overflow: auto;
             backdrop-filter: blur(5px);
         }
+
         .periodic-modal-content {
-            background-color: #1e293b; color: #f8fafc; padding: 30px; border-radius: 16px;
-            width: 100%; max-width: 1250px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5); position: relative; overflow-x: auto;
+            background-color: #1e293b; 
+            color: #f8fafc; 
+            padding: 30px; 
+            border-radius: 16px;
+            width: 100%; 
+            max-width: 1250px; 
+            box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5); 
+            position: relative; 
+            overflow-x: auto;
             border: 1px solid #334155;
         }
+
         .periodic-close-btn {
-            position: absolute; top: 15px; right: 25px; color: #f87171; font-size: 32px; font-weight: bold; cursor: pointer; transition: color 0.2s;
+            position: absolute; 
+            top: 15px; 
+            right: 25px; 
+            color: #f87171; 
+            font-size: 32px; 
+            font-weight: bold; 
+            cursor: pointer; 
+            transition: color 0.2s;
         }
-        .periodic-close-btn:hover { color: #ef4444; }
-        .periodic-modal-title { text-align: center; margin-top: 0; margin-bottom: 10px; font-size: 28px; color: #e2e8f0; }
+
+        .periodic-close-btn:hover { 
+            color: #ef4444; 
+        }
+
+        .periodic-modal-title { 
+            text-align: center; 
+            margin-top: 0; 
+            margin-bottom: 10px; 
+            font-size: 28px; 
+            color: #e2e8f0; 
+        }
+
         .periodic-grid {
-            display: grid; grid-template-columns: repeat(18, minmax(50px, 1fr));
-            grid-template-rows: repeat(7, minmax(50px, auto)) 20px repeat(2, minmax(50px, auto)); gap: 4px; padding: 10px 0; user-select: none;
+            display: grid; 
+            grid-template-columns: repeat(18, minmax(50px, 1fr));
+            grid-template-rows: repeat(7, minmax(50px, auto)) 20px repeat(2, minmax(50px, auto)); 
+            gap: 4px; 
+            padding: 10px 0; 
+            user-select: none;
         }
+
         .element-cell {
-            border: 1px solid rgba(255,255,255,0.1); border-radius: 4px; padding: 2px; display: flex; flex-direction: column;
-            justify-content: center; align-items: center; cursor: pointer; transition: all 0.2s;
-            aspect-ratio: 1 / 1; position: relative; background-color: #334155;
+            border: 1px solid rgba(255,255,255,0.1); 
+            border-radius: 4px; 
+            padding: 2px; 
+            display: flex; 
+            flex-direction: column;
+            justify-content: center; 
+            align-items: center; 
+            cursor: pointer; 
+            transition: all 0.2s;
+            aspect-ratio: 1 / 1; 
+            position: relative; 
+            background-color: #334155;
         }
-        .element-cell:hover { transform: scale(1.2); z-index: 10; box-shadow: 0 0 20px rgba(255,255,255,0.4); border-color: #fff; }
-        .atom-num { font-size: 10px; position: absolute; top: 2px; left: 4px; opacity: 0.6; }
-        .atom-sym { font-size: 18px; font-weight: bold; }
-        .atom-name { font-size: 9px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 95%; opacity: 0.8;}
-        .empty-cell { pointer-events: none; border: none; background: transparent; }
+
+        .element-cell:hover { 
+            transform: scale(1.2); 
+            z-index: 10; 
+            box-shadow: 0 0 20px rgba(255,255,255,0.4); 
+            border-color: #fff; 
+        }
+
+        .atom-num { 
+            font-size: 10px; 
+            position: absolute; 
+            top: 2px; 
+            left: 4px; 
+            opacity: 0.6; 
+        }
+
+        .atom-sym { 
+            font-size: 18px; 
+            font-weight: bold; 
+        }
+
+        .atom-name { 
+            font-size: 9px; 
+            white-space: nowrap; 
+            overflow: hidden; 
+            text-overflow: ellipsis; 
+            max-width: 95%; 
+            opacity: 0.8;
+        }
+
+        .empty-cell { 
+            pointer-events: none; 
+            border: none; 
+            background: transparent; 
+        }
 
         /* สีตามกลุ่มธาตุ อิงตามมาตรฐานเคมี */
         .cat-alkali { background-color: #ef4444; color: white; }
@@ -581,18 +859,9 @@ else if ($role === 'teacher') {
 
         /* Media Queries สำหรับหน้าจอเล็ก */
         @media (max-width: 1100px) {
-            .quest-panel, .status-panel { display: none; } /* ซ่อนแถบด้านข้างเมื่อจอเล็ก */
+            .quest-panel, .status-panel { display: none; }
         }
     </style>
-
-    <script type="importmap">
-    {
-        "imports": {
-            "three": "https://esm.sh/three@0.150.1",
-            "three/addons/OrbitControls.js": "https://esm.sh/three@0.150.1/examples/jsm/controls/OrbitControls.js"
-        }
-    }
-    </script>
 </head>
 <body>
 
@@ -695,35 +964,40 @@ else if ($role === 'teacher') {
 <script src="https://cdn.jsdelivr.net/npm/tom-select@2.2.2/dist/js/tom-select.complete.min.js"></script>
 
 <script type="module">
-    // โหลด 3D Engine
-    // หมายเหตุ: ไฟล์นี้ต้องมีอยู่จริงในโฟลเดอร์ js/ ถึงจะแสดง 3D ได้
-    import { init3DScene, updateLiquidVisuals } from './js/3d_engine.js';
+    try {
+        const engine = await import('./js/3d_engine.js');
+        window.hookInit3D = engine.init3DScene;
+        window.hookUpdateVisuals = engine.updateLiquidVisuals;
+        
+        const container = document.getElementById('viewer3d');
+        if (container && window.hookInit3D) {
+            window.hookInit3D(container);
+            const fallback = document.getElementById('viewer3d-fallback');
+            if(fallback) fallback.style.display = 'none';
+        }
+    } catch(e) {
+        console.warn("⚠️ ไม่สามารถโหลด 3D Engine ได้ (อาจไม่มีไฟล์ ./js/3d_engine.js) ระบบจะทำงานในโหมดตัวหนังสือแทน", e);
+    }
+</script>
 
-    let tomA, tomB;
+<script type="text/javascript">
+    
+    let tomA = null;
+    let tomB = null;
     let hp = 100;
     let beakerHp = 100;
     let currentTargetInput = null;
 
     document.addEventListener('DOMContentLoaded', () => {
-        // เริ่มต้น 3D Scene
-        const container = document.getElementById('viewer3d');
-        if (container) {
-            try {
-                init3DScene(container);
-                const fallback = document.getElementById('viewer3d-fallback');
-                if(fallback) fallback.style.display = 'none';
-            } catch (e) {
-                console.warn("3D Engine error or not found. Running in 2D mode.", e);
-            }
-        }
-
         // โหลดข้อมูล Dropdown
         loadChemicalsAndInitTomSelect();
 
         // ตั้งค่า Event Listner ให้ปุ่ม
         document.getElementById('mix-button').addEventListener('click', handleMix);
         document.getElementById('btn-reset-all').addEventListener('click', () => {
-            if(confirm("ต้องการเคลียร์สารในบีกเกอร์และเริ่มใหม่หรือไม่?")) window.location.reload();
+            if(confirm("ต้องการเคลียร์สารในบีกเกอร์และเริ่มใหม่หรือไม่?")) {
+                window.location.reload();
+            }
         });
 
         // วาดตารางธาตุ
@@ -734,9 +1008,17 @@ else if ($role === 'teacher') {
         try {
             // เรียกใช้ API จากไฟล์ตัวเองเพื่อดึงรายการสารเคมี
             const response = await fetch('mix.php?action=get_chemicals');
-            const data = await response.json();
+            const responseText = await response.text();
             
-            if (!Array.isArray(data)) throw new Error("รูปแบบข้อมูลจาก Database ไม่ถูกต้อง");
+            let data;
+            try {
+                data = JSON.parse(responseText);
+            } catch (err) {
+                console.error("JSON Error:", responseText);
+                throw new Error("รูปแบบข้อมูลจาก Database ไม่ถูกต้อง (อาจมี Error ซ่อนอยู่ใน PHP)");
+            }
+            
+            if (!Array.isArray(data)) throw new Error("ข้อมูลไม่ใช่ Array");
 
             const config = {
                 valueField: 'value', 
@@ -761,11 +1043,11 @@ else if ($role === 'teacher') {
 
         } catch (error) {
             console.error("Failed to load chemicals:", error);
-            alert("⚠️ ไม่สามารถโหลดรายการสารเคมีได้ (กรุณาตรวจสอบการเชื่อมต่อฐานข้อมูล)");
+            alert("⚠️ ไม่สามารถโหลดรายการสารเคมีได้ (กรุณากด F12 ดู Console หรือตรวจสอบการเชื่อมต่อฐานข้อมูล)");
         }
     }
 
-    // ข้อมูลตารางธาตุ 118 ธาตุ แบบสมบูรณ์
+    // ข้อมูลตารางธาตุ 118 ธาตุ
     const periodicTableData = [
         { num: 1, sym: 'H', name: 'Hydrogen', group: 1, period: 1, cat: 'nonmetal' },
         { num: 2, sym: 'He', name: 'Helium', group: 18, period: 1, cat: 'noble-gas' },
@@ -824,7 +1106,7 @@ else if ($role === 'teacher') {
         { num: 55, sym: 'Cs', name: 'Cesium', group: 1, period: 6, cat: 'alkali' },
         { num: 56, sym: 'Ba', name: 'Barium', group: 2, period: 6, cat: 'alkaline-earth' },
         { num: 57, sym: 'La', name: 'Lanthanum', group: 3, period: 6, cat: 'lanthanide' },
-        { num: 58, sym: 'Ce', name: 'Cerium', group: 3, period: 9, cat: 'lanthanide' }, 
+        { num: 58, sym: 'Ce', name: 'Cerium', group: 3, period: 9, cat: 'lanthanide' },
         { num: 59, sym: 'Pr', name: 'Praseodymium', group: 4, period: 9, cat: 'lanthanide' },
         { num: 60, sym: 'Nd', name: 'Neodymium', group: 5, period: 9, cat: 'lanthanide' },
         { num: 61, sym: 'Pm', name: 'Promethium', group: 6, period: 9, cat: 'lanthanide' },
@@ -856,7 +1138,7 @@ else if ($role === 'teacher') {
         { num: 87, sym: 'Fr', name: 'Francium', group: 1, period: 7, cat: 'alkali' },
         { num: 88, sym: 'Ra', name: 'Radium', group: 2, period: 7, cat: 'alkaline-earth' },
         { num: 89, sym: 'Ac', name: 'Actinium', group: 3, period: 7, cat: 'actinide' },
-        { num: 90, sym: 'Th', name: 'Thorium', group: 3, period: 10, cat: 'actinide' }, 
+        { num: 90, sym: 'Th', name: 'Thorium', group: 3, period: 10, cat: 'actinide' },
         { num: 91, sym: 'Pa', name: 'Protactinium', group: 4, period: 10, cat: 'actinide' },
         { num: 92, sym: 'U', name: 'Uranium', group: 5, period: 10, cat: 'actinide' },
         { num: 93, sym: 'Np', name: 'Neptunium', group: 6, period: 10, cat: 'actinide' },
@@ -895,7 +1177,10 @@ else if ($role === 'teacher') {
             for (let col = 1; col <= 18; col++) {
                 let element = null;
                 for (const el of periodicTableData) {
-                    if (el.period === row && el.group === col) { element = el; break; }
+                    if (el.period === row && el.group === col) { 
+                        element = el; 
+                        break; 
+                    }
                 }
 
                 const cell = document.createElement('div');
@@ -923,19 +1208,25 @@ else if ($role === 'teacher') {
     window.openPeriodicTable = function(target) {
         currentTargetInput = target; 
         const modal = document.getElementById('periodicModal');
-        if (modal) modal.style.display = 'flex'; 
+        if (modal) {
+            modal.style.display = 'flex'; 
+        }
     }
 
     window.closePeriodicTable = function() {
         currentTargetInput = null; 
         const modal = document.getElementById('periodicModal');
-        if (modal) modal.style.display = 'none'; 
+        if (modal) {
+            modal.style.display = 'none'; 
+        }
     }
 
     // ปิดเมื่อคลิกนอกกรอบ
     window.onclick = function(event) {
         const modal = document.getElementById('periodicModal');
-        if (event.target == modal) closePeriodicTable();
+        if (event.target == modal) {
+            closePeriodicTable();
+        }
     }
 
     function selectElementFromTable(elementName) {
@@ -946,7 +1237,8 @@ else if ($role === 'teacher') {
         // ค้นหา ID ที่ตรงกับชื่อธาตุ
         for (const [id, optionData] of Object.entries(targetTom.options)) {
             if (optionData.text.toLowerCase().includes(elementName.toLowerCase())) {
-                foundId = id; break;
+                foundId = id; 
+                break;
             }
         }
 
@@ -982,7 +1274,15 @@ else if ($role === 'teacher') {
             // เรียก API ในไฟล์ตัวเอง
             const url = `mix.php?action=mix&a=${chemA}&b=${chemB}&volA=${volA}&volB=${volB}`;
             const response = await fetch(url);
-            const data = await response.json();
+            const responseText = await response.text();
+            
+            let data;
+            try {
+                data = JSON.parse(responseText);
+            } catch (e) {
+                console.error("Not JSON:", responseText);
+                throw new Error("ระบบหลังบ้านมีปัญหา (อาจเกิดจากคำสั่ง SQL หรือ ตัวแปรสูญหาย)");
+            }
 
             if (!data.success) {
                 throw new Error(data.error || "Server Error: การคำนวณล้มเหลว");
@@ -991,9 +1291,9 @@ else if ($role === 'teacher') {
             // แสดงกล่องผลลัพธ์
             document.getElementById('result-box').style.display = 'block';
 
-            // ถ้ามี 3D ให้เรียกใช้อัปเดต
-            if(typeof updateLiquidVisuals === 'function') {
-                updateLiquidVisuals(data);
+            // ถ้า 3D Engine โหลดสำเร็จ ให้เรียกใช้อัปเดต
+            if(typeof window.hookUpdateVisuals === 'function') {
+                window.hookUpdateVisuals(data);
             }
 
             updateResultBox(data);
@@ -1040,7 +1340,11 @@ else if ($role === 'teacher') {
         }
     }
 
-    function setText(id, text) { const el = document.getElementById(id); if (el) el.innerText = text; }
+    function setText(id, text) { 
+        const el = document.getElementById(id); 
+        if (el) el.innerText = text; 
+    }
+
     function translateState(state) {
         if(state === 'liquid') return 'ของเหลว (Liquid)';
         if(state === 'solid') return 'ของแข็ง (Solid)';
@@ -1066,19 +1370,28 @@ else if ($role === 'teacher') {
     }
 
     function updateBars(damagePlayer, damageBeaker) {
-        hp -= damagePlayer; beakerHp -= damageBeaker;
-        if(hp < 0) hp = 0; if(beakerHp < 0) beakerHp = 0;
+        hp -= damagePlayer; 
+        beakerHp -= damageBeaker;
+
+        if(hp < 0) hp = 0; 
+        if(beakerHp < 0) beakerHp = 0;
         
         document.getElementById('health-bar').style.width = hp + "%";
         document.getElementById('text-health').innerText = hp + "%";
         document.getElementById('beaker-bar').style.width = beakerHp + "%";
         document.getElementById('text-beaker').innerText = beakerHp + "%";
         
-        if(hp <= 30) document.getElementById('health-bar').style.backgroundColor = "#ef4444"; 
-        else document.getElementById('health-bar').style.backgroundColor = "#4ade80";
+        if(hp <= 30) {
+            document.getElementById('health-bar').style.backgroundColor = "#ef4444"; 
+        } else {
+            document.getElementById('health-bar').style.backgroundColor = "#4ade80";
+        }
 
-        if(hp === 0) setTimeout(() => alert("💀 Game Over! คุณได้รับสารพิษมากเกินไป ต้องถูกนำส่งห้องพยาบาลด่วน! (โปรดกดรีเซ็ต)"), 500);
-        else if(beakerHp === 0) setTimeout(() => alert("🧪 บีกเกอร์แตกแล้ว! การทดลองล้มเหลว กรุณาเบิกบีกเกอร์ใหม่ (โปรดกดรีเซ็ต)"), 500);
+        if(hp === 0) {
+            setTimeout(() => alert("💀 Game Over! คุณได้รับสารพิษมากเกินไป ต้องถูกนำส่งห้องพยาบาลด่วน! (โปรดกดรีเซ็ต)"), 500);
+        } else if(beakerHp === 0) {
+            setTimeout(() => alert("🧪 บีกเกอร์แตกแล้ว! การทดลองล้มเหลว กรุณาเบิกบีกเกอร์ใหม่ (โปรดกดรีเซ็ต)"), 500);
+        }
     }
 </script>
 

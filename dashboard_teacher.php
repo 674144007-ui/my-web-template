@@ -1,21 +1,28 @@
 <?php
-// dashboard_teacher.php - Teacher Dashboard (Update: Profile Widget & Lab Entry)
+// dashboard_teacher.php - Teacher Dashboard (Update: Safe SQL & Lab Entry)
 if (ob_get_level() == 0) ob_start();
 session_start();
 require_once 'auth.php';
 require_once 'db.php';
 
-// ตรวจสอบสิทธิ์
 requireRole(['teacher', 'developer', 'admin']);
 
-// ดึงข้อมูล User ล่าสุดจาก Database (เพื่อให้ได้รูปและกรอบที่เป็นปัจจุบันที่สุด)
-$my_id = $_SESSION['user_id'];
+// ดึงข้อมูล User ป้องกันตัวแปรหาย
+$my_id = $_SESSION['user_id'] ?? $_SESSION['id'] ?? 0;
+if ($my_id == 0) {
+    header("Location: index.php");
+    exit;
+}
+
 $stmt = $conn->prepare("SELECT * FROM users WHERE id = ?");
 $stmt->bind_param("i", $my_id);
 $stmt->execute();
 $user = $stmt->get_result()->fetch_assoc();
 
-// ตรวจสอบโหมดจำลอง (Simulation)
+if (!$user) {
+    die("ไม่พบข้อมูลบุคลากรในระบบ กรุณาล็อกอินใหม่");
+}
+
 $is_sim = (isset($_SESSION['dev_simulation_mode']) || (isset($_SESSION['original_role']) && $_SESSION['original_role']=='developer'));
 ?>
 <!DOCTYPE html>
@@ -25,62 +32,194 @@ $is_sim = (isset($_SESSION['dev_simulation_mode']) || (isset($_SESSION['original
 <title>Teacher Dashboard</title>
 <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;700&display=swap" rel="stylesheet">
 <style>
-    body { margin:0; padding:30px; font-family:"Sarabun",sans-serif; background:#f0f2f5; }
+    body { 
+        margin: 0; 
+        padding: 30px; 
+        font-family: "Sarabun", sans-serif; 
+        background: #f0f2f5; 
+    }
     
-    /* Topbar Layout */
     .topbar { 
-        display:flex; justify-content:space-between; align-items:center; 
-        margin-bottom:30px; background: white; padding: 15px 25px; 
-        border-radius: 15px; box-shadow: 0 4px 10px rgba(0,0,0,0.05);
+        display: flex; 
+        justify-content: space-between; 
+        align-items: center; 
+        margin-bottom: 30px; 
+        background: white; 
+        padding: 15px 25px; 
+        border-radius: 15px; 
+        box-shadow: 0 4px 10px rgba(0,0,0,0.05); 
     }
     
-    /* Profile Widget (Top Right) */
-    .profile-widget { display: flex; align-items: center; gap: 15px; }
-    .profile-info { text-align: right; }
-    .profile-name { font-weight: bold; color: #1e293b; display: block; }
-    .profile-role { font-size: 0.8rem; color: #64748b; background: #e2e8f0; padding: 2px 8px; border-radius: 10px; }
+    .profile-widget { 
+        display: flex; 
+        align-items: center; 
+        gap: 15px; 
+    }
+
+    .profile-info { 
+        text-align: right; 
+    }
+
+    .profile-name { 
+        font-weight: bold; 
+        color: #1e293b; 
+        display: block; 
+    }
+
+    .profile-role { 
+        font-size: 0.8rem; 
+        color: #64748b; 
+        background: #e2e8f0; 
+        padding: 2px 8px; 
+        border-radius: 10px; 
+    }
     
-    .avatar-wrapper { position: relative; width: 50px; height: 50px; cursor: pointer; }
+    .avatar-wrapper { 
+        position: relative; 
+        width: 50px; 
+        height: 50px; 
+        cursor: pointer; 
+    }
+
     .avatar-img { 
-        width: 100%; height: 100%; object-fit: cover; border-radius: 50%; 
-        border: 2px solid #e2e8f0; transition: 0.2s;
+        width: 100%; 
+        height: 100%; 
+        object-fit: cover; 
+        border-radius: 50%; 
+        border: 2px solid #e2e8f0; 
+        transition: 0.2s; 
     }
-    .avatar-img:hover { transform: scale(1.05); border-color: #3b82f6; }
+
+    .avatar-img:hover { 
+        transform: scale(1.05); 
+        border-color: #3b82f6; 
+    }
     
-    /* Frame Overlay Small */
-    .frame-mini { position: absolute; top: -10%; left: -10%; width: 120%; height: 120%; pointer-events: none; z-index: 2; border-radius: 50%; }
+    .frame-mini { 
+        position: absolute; 
+        top: -10%; 
+        left: -10%; 
+        width: 120%; 
+        height: 120%; 
+        pointer-events: none; 
+        z-index: 2; 
+        border-radius: 50%; 
+    }
+
     .f-gold { border: 2px solid #fbbf24; box-shadow: 0 0 5px #fbbf24; }
     .f-fire { border: 2px solid #ef4444; box-shadow: 0 0 5px #ef4444; }
     .f-neon { border: 2px solid #06b6d4; box-shadow: 0 0 5px #06b6d4; }
 
-    /* Dropdown Menu */
     .logout-btn { 
-        color: #ef4444; text-decoration: none; font-weight: bold; font-size: 0.9rem; 
-        border: 1px solid #ef4444; padding: 5px 10px; border-radius: 8px; transition: 0.2s;
-        margin-left: 10px;
+        color: #ef4444; 
+        text-decoration: none; 
+        font-weight: bold; 
+        font-size: 0.9rem; 
+        border: 1px solid #ef4444; 
+        padding: 5px 10px; 
+        border-radius: 8px; 
+        transition: 0.2s; 
+        margin-left: 10px; 
     }
-    .logout-btn:hover { background: #ef4444; color: white; }
 
-    /* Cards */
-    .card-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:25px; margin-top: 20px; }
-    .card { background:white; padding:25px; border-radius:15px; box-shadow:0 4px 10px rgba(0,0,0,0.05); transition:0.3s; text-align:center; border:1px solid #e2e8f0; }
-    .card:hover { transform:translateY(-5px); box-shadow:0 10px 20px rgba(0,0,0,0.1); }
-    .btn { display:block; width:100%; padding:10px 0; margin-top:15px; background:#3b82f6; color:white; text-decoration:none; border-radius:8px; font-weight:bold; transition: 0.2s; }
-    .btn:hover { filter: brightness(1.1); }
-    
-    .c-profile { background: linear-gradient(135deg, #1e293b, #0f172a); color:white; }
-    .c-profile .btn { background:#fbbf24; color:black; }
-    .c-mission { background: linear-gradient(135deg, #4f46e5, #312e81); color:white; }
-    
-    /* สไตล์พิเศษสำหรับห้องแล็บครู */
-    .c-lab { background: linear-gradient(135deg, #0f172a, #334155); color:white; border: 1px solid #38bdf8; }
-    .c-lab h3 { color: #38bdf8; }
-    .c-lab p { color: #cbd5e1; }
-    .c-lab .btn { background: #38bdf8; color: #0f172a; box-shadow: 0 4px 10px rgba(56, 189, 248, 0.4); }
+    .logout-btn:hover { 
+        background: #ef4444; 
+        color: white; 
+    }
 
-    /* Sim Bar */
-    .sim-bar { background: #ef4444; color: white; padding: 10px; text-align: center; margin-bottom: 20px; border-radius: 8px; font-weight: bold; }
-    .btn-exit-sim { background: white; color: #ef4444; padding: 3px 10px; border-radius: 15px; text-decoration: none; margin-left: 10px; font-size: 0.9rem; }
+    .card-grid { 
+        display: grid; 
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); 
+        gap: 25px; 
+        margin-top: 20px; 
+    }
+
+    .card { 
+        background: white; 
+        padding: 25px; 
+        border-radius: 15px; 
+        box-shadow: 0 4px 10px rgba(0,0,0,0.05); 
+        transition: 0.3s; 
+        text-align: center; 
+        border: 1px solid #e2e8f0; 
+    }
+
+    .card:hover { 
+        transform: translateY(-5px); 
+        box-shadow: 0 10px 20px rgba(0,0,0,0.1); 
+    }
+
+    .btn { 
+        display: block; 
+        width: 100%; 
+        padding: 10px 0; 
+        margin-top: 15px; 
+        background: #3b82f6; 
+        color: white; 
+        text-decoration: none; 
+        border-radius: 8px; 
+        font-weight: bold; 
+        transition: 0.2s; 
+    }
+
+    .btn:hover { 
+        filter: brightness(1.1); 
+    }
+    
+    .c-profile { 
+        background: linear-gradient(135deg, #1e293b, #0f172a); 
+        color: white; 
+    }
+
+    .c-profile .btn { 
+        background: #fbbf24; 
+        color: black; 
+    }
+
+    .c-mission { 
+        background: linear-gradient(135deg, #4f46e5, #312e81); 
+        color: white; 
+    }
+    
+    .c-lab { 
+        background: linear-gradient(135deg, #0f172a, #334155); 
+        color: white; 
+        border: 1px solid #38bdf8; 
+    }
+
+    .c-lab h3 { 
+        color: #38bdf8; 
+    }
+
+    .c-lab p { 
+        color: #cbd5e1; 
+    }
+
+    .c-lab .btn { 
+        background: #38bdf8; 
+        color: #0f172a; 
+        box-shadow: 0 4px 10px rgba(56, 189, 248, 0.4); 
+    }
+
+    .sim-bar { 
+        background: #ef4444; 
+        color: white; 
+        padding: 10px; 
+        text-align: center; 
+        margin-bottom: 20px; 
+        border-radius: 8px; 
+        font-weight: bold; 
+    }
+
+    .btn-exit-sim { 
+        background: white; 
+        color: #ef4444; 
+        padding: 3px 10px; 
+        border-radius: 15px; 
+        text-decoration: none; 
+        margin-left: 10px; 
+        font-size: 0.9rem; 
+    }
 </style>
 </head>
 <body>
