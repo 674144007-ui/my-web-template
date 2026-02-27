@@ -24,6 +24,34 @@ if (session_status() === PHP_SESSION_NONE) {
 }
 
 /**
+ * สร้าง CSRF Token ประจำ Session (ใช้ป้องกัน Cross-Site Request Forgery)
+ */
+function generate_csrf_token() {
+    if (empty($_SESSION['csrf_token'])) {
+        $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+    }
+    return $_SESSION['csrf_token'];
+}
+
+/**
+ * ตรวจสอบความถูกต้องของ CSRF Token ที่ส่งมาจาก Form
+ */
+function verify_csrf_token($token_from_post) {
+    if (empty($_SESSION['csrf_token']) || !hash_equals($_SESSION['csrf_token'], $token_from_post)) {
+        http_response_code(403);
+        die("❌ Security Error: CSRF Token ไม่ถูกต้อง หรือ Session หมดอายุ กรุณารีเฟรชหน้าเว็บแล้วลองใหม่");
+    }
+}
+
+/**
+ * ฟังก์ชันย่อสำหรับป้องกัน XSS (Cross-Site Scripting)
+ * ใช้คลุมตัวแปรทุกตัวที่นำมาแสดงผลบน HTML
+ */
+function h($string) {
+    return htmlspecialchars($string ?? '', ENT_QUOTES, 'UTF-8');
+}
+
+/**
  * ตรวจว่า login อยู่หรือยัง
  */
 function isLoggedIn() {
@@ -41,8 +69,7 @@ function currentUser() {
         'username'           => $_SESSION['username'],
         'display_name'       => $_SESSION['display_name'],
         'role'               => $_SESSION['role'],
-        'subject_group'      => $_SESSION['subject_group'] ?? null,
-        'teacher_department' => $_SESSION['teacher_department'] ?? null
+        'class_level'        => $_SESSION['class_level'] ?? null
     ];
 }
 
@@ -51,7 +78,7 @@ function currentUser() {
  */
 function requireLogin() {
     if (!isLoggedIn()) {
-        header("Location: login.php");
+        header("Location: index.php"); // เปลี่ยนกลับไปหน้า index (login)
         exit;
     }
 }
@@ -72,9 +99,13 @@ function requireRole($roles) {
         http_response_code(403);
 
         // แสดงหน้าห้ามเข้าแบบปลอดภัย
-        echo "<h2 style='color:red'>403 - ไม่อนุญาตให้เข้าถึง</h2>";
-        echo "<p>สิทธิ์ของคุณ: <strong>{$userRole}</strong></p>";
-        echo "<p>ต้องการสิทธิ์: " . implode(", ", $roles) . "</p>";
+        echo "<!DOCTYPE html><html lang='th'><head><meta charset='UTF-8'><title>Access Denied</title>";
+        echo "<style>body{font-family:system-ui;text-align:center;padding:50px;background:#fef2f2;color:#991b1b;}</style></head><body>";
+        echo "<h2>🛑 403 - ไม่อนุญาตให้เข้าถึง</h2>";
+        echo "<p>สิทธิ์ปัจจุบันของคุณคือ: <strong>" . h($userRole) . "</strong></p>";
+        echo "<p>หน้านี้ต้องการสิทธิ์ระดับ: " . h(implode(", ", $roles)) . "</p>";
+        echo "<br><a href='index.php' style='padding:10px 20px;background:#991b1b;color:white;text-decoration:none;border-radius:8px;'>กลับหน้าหลัก</a>";
+        echo "</body></html>";
         exit;
     }
 }

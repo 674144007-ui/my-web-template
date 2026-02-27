@@ -1,168 +1,170 @@
 <?php
-require_once 'auth.php';
-requireRole(['developer']);
+// add_user.php - ฟอร์มเพิ่มผู้ใช้งาน (Phase 2 - Grouped Dropdown)
+require_once 'config.php';
 require_once 'db.php';
+require_once 'auth.php';
+require_once 'logger.php';
 
+// อนุญาตเฉพาะ Developer
+requireRole(['developer']);
+
+$page_title = "เพิ่มผู้ใช้งานใหม่";
 $msg = "";
+$msg_type = "";
+$csrf = generate_csrf_token();
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-
-    $username       = trim($_POST['username']);
-    $password_plain = trim($_POST['password']);
-    $display_name   = trim($_POST['display_name']);
-    $role           = $_POST['role'];
-
-    // ตัวเลือกเฉพาะครู
-    $subject_group       = ($role === 'teacher') ? trim($_POST['subject_group']) : NULL;
-    $teacher_department  = ($role === 'teacher') ? trim($_POST['teacher_department']) : NULL;
-
-    // hash รหัสผ่าน
-    $password_hashed = password_hash($password_plain, PASSWORD_DEFAULT);
-
-    $stmt = $conn->prepare("
-        INSERT INTO users(username, password, display_name, role, subject_group, teacher_department)
-        VALUES (?,?,?,?,?,?)
-    ");
-    $stmt->bind_param("ssssss",
-        $username,
-        $password_hashed,
-        $display_name,
-        $role,
-        $subject_group,
-        $teacher_department
-    );
-
-    if ($stmt->execute()) {
-        $msg = "✔ เพิ่มผู้ใช้สำเร็จ!";
-    } else {
-        $msg = "❌ เกิดข้อผิดพลาด: " . $conn->error;
+// -----------------------------
+// ดึงข้อมูลชั้นเรียนมาจัดกลุ่ม (Group by Level)
+// -----------------------------
+$grouped_classes = [];
+$res_classes = $conn->query("SELECT id, class_name, level FROM classes ORDER BY level ASC, room ASC");
+if ($res_classes) {
+    while ($row = $res_classes->fetch_assoc()) {
+        $lvl = $row['level'] ? $row['level'] : 'อื่นๆ';
+        $grouped_classes[$lvl][] = $row;
     }
 }
+
+// -----------------------------
+// เมื่อกดปุ่ม "บันทึก"
+// -----------------------------
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    verify_csrf_token($_POST['csrf_token'] ?? '');
+
+    $username       = trim($_POST['username'] ?? '');
+    $password_plain = $_POST['password'] ?? '';
+    $display_name   = trim($_POST['display_name'] ?? '');
+    $role           = $_POST['role'] ?? 'student';
+    $class_id       = intval($_POST['class_id'] ?? 0);
+
+    // 1. Validation เบื้องต้น
+    if (empty($username) || empty($password_plain) || empty($display_name)) {
+        $msg = "❌ กรุณากรอกข้อมูล Username, Password และชื่อแสดง ให้ครบถ้วน";
+        $msg_type = "error";
+    } elseif (strlen($username) < 4) {
+        $msg = "❌ Username ต้องมีความยาวอย่างน้อย 4 ตัวอักษร";
+        $msg_type = "error";
+    } elseif (strlen($password_plain) < 6) {
+        $msg = "❌ Password ควรมีความยาวอย่างน้อย 6 ตัวอักษรเพื่อความปลอดภัย";
+        $msg_type = "error";
+    } else {
+        // 2. ตรวจสอบ Username ซ้ำในระบบ
+        $check_stmt = $conn->prepare("SELECT id FROM users WHERE username = ? LIMIT 1");
+        $check_stmt->bind_param("s", $username);
+        $check_stmt->execute();
+        $check_stmt->store_result();
+
+        if ($check_stmt->num_rows > 0) {
+            $msg = "❌ Username นี้มีอยู่ในระบบแล้ว กรุณาใช้ชื่ออื่น";
+            $msg_type = "error";
+        } else {
+            // 3. จัดการค่า NULL สำหรับ class_id (ถ้าเลือก "ไม่ระบุ" จะถูกส่งเป็น 0)
+            $final_class_id = ($class_id > 0) ? $class_id : NULL;
+
+            // 4. เข้ารหัสผ่าน
+            $password_hashed = password_hash($password_plain, PASSWORD_DEFAULT);
+
+            // 5. บันทึกลงฐานข้อมูล
+            $stmt = $conn->prepare("
+                INSERT INTO users (username, password, display_name, role, class_id)
+                VALUES (?, ?, ?, ?, ?)
+            ");
+            $stmt->bind_param("ssssi", $username, $password_hashed, $display_name, $role, $final_class_id);
+
+            if ($stmt->execute()) {
+                $new_id = $stmt->insert_id;
+                $msg = "✔ เพิ่มผู้ใช้งานใหม่ '{$username}' เข้าระบบสำเร็จ!";
+                $msg_type = "success";
+                systemLog($_SESSION['user_id'], 'CREATE_USER', "Created new user ID: $new_id, Role: $role");
+                
+                $_POST = []; // ล้างค่าฟอร์ม
+            } else {
+                error_log("Add User Error: " . $stmt->error);
+                $msg = "❌ เกิดข้อผิดพลาดของฐานข้อมูล ไม่สามารถบันทึกได้";
+                $msg_type = "error";
+            }
+            $stmt->close();
+        }
+        $check_stmt->close();
+    }
+}
+
+require_once 'header.php';
 ?>
-<!DOCTYPE html>
-<html lang="th">
-<head>
-<meta charset="UTF-8">
-<title>เพิ่มผู้ใช้ใหม่</title>
-<style>
-body {
-    font-family: system-ui;
-    background: #0A0F24;
-    color: white;
-    padding: 20px;
-}
-.card {
-    background: rgba(30,41,59,0.6);
-    padding: 26px;
-    border-radius: 16px;
-    max-width: 520px;
-    margin: auto;
-    box-shadow: 0 15px 30px rgba(0,0,0,0.35);
-    backdrop-filter: blur(12px);
-}
-input, select {
-    width: 100%;
-    padding: 10px;
-    border-radius: 10px;
-    margin-bottom: 12px;
-    border: 1px solid #475569;
-    background: rgba(255,255,255,0.1);
-    color: #00bddaff;
-}
-button {
-    width:100%;
-    padding:12px;
-    background:#22c55e;
-    color:#0f172a;
-    border:none;
-    border-radius:10px;
-    font-weight:bold;
-    cursor:pointer;
-}
-button:hover { background:#4ade80; }
-.msg {
-    padding:10px;
-    background:#1e3a8a;
-    border-radius:10px;
-    margin-bottom:12px;
-}
-a { color:#60a5fa; text-decoration:none; }
-</style>
 
-<script>
-function toggleTeacherFields() {
-    let role = document.getElementById("role").value;
-    let teacherBox = document.getElementById("teacher_fields");
-    teacherBox.style.display = (role === "teacher") ? "block" : "none";
-}
-</script>
+<div class="card" style="max-width: 550px; margin: 0 auto;">
+    <h2 style="color: #0f172a; margin-top: 0;">➕ เพิ่มผู้ใช้งานใหม่ (Add User)</h2>
+    <p style="color: #64748b; margin-bottom: 25px;">สร้างบัญชีสำหรับนักเรียน ครู หรือผู้ปกครอง</p>
 
-</head>
-<body>
+    <?php if ($msg): ?>
+        <div class="msg <?= h($msg_type) ?>"><?= h($msg) ?></div>
+    <?php endif; ?>
 
-<div class="card">
-    <h2>➕ เพิ่มผู้ใช้ใหม่</h2>
+    <form method="post" autocomplete="off">
+        <input type="hidden" name="csrf_token" value="<?= h($csrf) ?>">
 
-    <?php if($msg): ?><div class="msg"><?= $msg ?></div><?php endif; ?>
+        <label for="username">Username (สำหรับล็อกอิน) <span style="color:red">*</span></label>
+        <input type="text" id="username" name="username" value="<?= h($_POST['username'] ?? '') ?>" required placeholder="เช่น stu002 หรือ mr.pichaya" autocomplete="new-password">
 
-    <form method="post">
-        <label>Username</label>
-        <input type="text" name="username" required>
+        <label for="password">Password (รหัสผ่านเริ่มต้น) <span style="color:red">*</span></label>
+        <input type="text" id="password" name="password" value="<?= h($_POST['password'] ?? '') ?>" required placeholder="อย่างน้อย 6 ตัวอักษร" autocomplete="new-password">
 
-        <label>Password</label>
-        <input type="text" name="password" required>
+        <label for="display_name">ชื่อ-นามสกุล ที่แสดงบนระบบ <span style="color:red">*</span></label>
+        <input type="text" id="display_name" name="display_name" value="<?= h($_POST['display_name'] ?? '') ?>" required placeholder="เช่น ด.ช.สมชาย เรียนดี">
 
-        <label>ชื่อแสดงบนระบบ</label>
-        <input type="text" name="display_name" required>
+        <div style="display: flex; gap: 15px; margin-bottom: 15px;">
+            <div style="flex: 1;">
+                <label for="role">บทบาท (Role) <span style="color:red">*</span></label>
+                <select id="role" name="role" required onchange="toggleClassField()" style="width: 100%; padding: 12px; border-radius: 10px; border: 1px solid #cbd5e1; outline: none;">
+                    <option value="student" <?= (isset($_POST['role']) && $_POST['role'] === 'student') ? 'selected' : '' ?>>👨‍🎓 นักเรียน (Student)</option>
+                    <option value="teacher" <?= (isset($_POST['role']) && $_POST['role'] === 'teacher') ? 'selected' : '' ?>>👨‍🏫 ครูผู้สอน (Teacher)</option>
+                    <option value="parent" <?= (isset($_POST['role']) && $_POST['role'] === 'parent') ? 'selected' : '' ?>>👨‍👩‍👦 ผู้ปกครอง (Parent)</option>
+                    <option value="developer" <?= (isset($_POST['role']) && $_POST['role'] === 'developer') ? 'selected' : '' ?>>💻 นักพัฒนา (Developer)</option>
+                </select>
+            </div>
 
-        <label>บทบาท</label>
-        <select name="role" id="role" onchange="toggleTeacherFields()" required>
-            <option value="teacher">ครู</option>
-            <option value="student">นักเรียน</option>
-            <option value="parent">ผู้ปกครอง</option>
-            <option value="developer">Developer</option>
-        </select>
-
-        <!-- ส่วนที่เพิ่มขึ้นมาเฉพาะครู -->
-        <div id="teacher_fields" style="display:none; margin-top:10px;">
-
-            <label>กลุ่มสาระ</label>
-            <select name="subject_group">
-                <option value="">-- เลือกกลุ่มสาระ --</option>
-                <option value="คณิตศาสตร์">คณิตศาสตร์</option>
-                <option value="วิทยาศาสตร์">วิทยาศาสตร์</option>
-                <option value="ภาษาไทย">ภาษาไทย</option>
-                <option value="ภาษาอังกฤษ">ภาษาอังกฤษ</option>
-                <option value="สังคมศึกษา">สังคมศึกษา</option>
-                <option value="ดนตรี-นาฏศิลป์">ดนตรี-นาฏศิลป์</option>
-                <option value="ศิลปะ">ศิลปะ</option>
-                <option value="พลศึกษา">พลศึกษา</option>
-                <option value="คอมพิวเตอร์">คอมพิวเตอร์</option>
-                <option value="การงานอาชีพ">การงานอาชีพ</option>
-            </select>
-
-            <label>ฝ่าย / ตำแหน่ง</label>
-            <select name="teacher_department">
-                <option value="">-- เลือกฝ่าย --</option>
-                <option value="ฝ่ายวิชาการ">ฝ่ายวิชาการ</option>
-                <option value="ฝ่ายกิจการนักเรียน">ฝ่ายกิจการนักเรียน</option>
-                <option value="ฝ่ายธุรการ">ฝ่ายธุรการ</option>
-                <option value="ฝ่ายบริหารทั่วไป">ฝ่ายบริหารทั่วไป</option>
-                <option value="ฝ่ายเทคโนโลยีสารสนเทศ">ฝ่ายเทคโนโลยีสารสนเทศ</option>
-            </select>
-
+            <div style="flex: 1;" id="class_container">
+                <label for="class_id">ระดับชั้น (ถ้ามี)</label>
+                <select id="class_id" name="class_id" style="width: 100%; padding: 12px; border-radius: 10px; border: 1px solid #cbd5e1; outline: none; font-family: inherit;">
+                    <option value="0">-- ไม่ระบุชั้นเรียน --</option>
+                    <?php foreach ($grouped_classes as $lvl => $rooms): ?>
+                        <optgroup label="📚 ระดับชั้น <?= h($lvl) ?>">
+                            <?php foreach ($rooms as $c): ?>
+                                <option value="<?= h($c['id']) ?>" <?= (isset($_POST['class_id']) && $_POST['class_id'] == $c['id']) ? 'selected' : '' ?>>
+                                    <?= h($c['class_name']) ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </optgroup>
+                    <?php endforeach; ?>
+                </select>
+            </div>
         </div>
 
-        <button type="submit">บันทึกผู้ใช้</button>
+        <button type="submit" class="btn-primary" style="width: 100%; font-size: 1.1rem; padding: 15px; background: #10b981; margin-top: 10px;">
+            💾 บันทึกข้อมูลเข้าฐานข้อมูล
+        </button>
     </form>
 
-    <br>
-    <a href="user_manager.php">⬅ กลับหน้าจัดการผู้ใช้</a>
+    <div style="text-align: center; margin-top: 20px;">
+        <a href="user_manager.php" style="color: #475569; text-decoration: none; font-weight: bold;">⬅ กลับหน้ารายชื่อผู้ใช้</a>
+    </div>
 </div>
 
 <script>
-    toggleTeacherFields();
+    function toggleClassField() {
+        const role = document.getElementById('role').value;
+        const classBox = document.getElementById('class_container');
+        
+        if (role === 'student' || role === 'teacher') {
+            classBox.style.opacity = '1';
+            classBox.style.pointerEvents = 'auto';
+        } else {
+            classBox.style.opacity = '0.4';
+            classBox.style.pointerEvents = 'none';
+            document.getElementById('class_id').value = "0"; // รีเซ็ตเป็นไม่ระบุ
+        }
+    }
+    document.addEventListener("DOMContentLoaded", toggleClassField);
 </script>
 
-</body>
-</html>
+<?php require_once 'footer.php'; ?>

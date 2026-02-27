@@ -1,171 +1,145 @@
 <?php
-require_once 'auth.php';
-requireRole(['teacher','developer']);
+// create_quest.php - ระบบสร้างภารกิจการทดลองสำหรับครู
+require_once 'config.php';
 require_once 'db.php';
+require_once 'auth.php';
+require_once 'logger.php';
+
+// เฉพาะครูและผู้พัฒนา
+requireRole(['teacher', 'developer']);
 
 $msg = "";
 $msg_type = "";
+$page_title = "สร้างภารกิจการทดลอง (Quest)";
+$csrf = generate_csrf_token();
+$teacher_id = $_SESSION['user_id'];
 
-// -------------------------------
-// CSRF Token
-// -------------------------------
-if (empty($_SESSION['csrf_token'])) {
-    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+// ดึงรายชื่อสารเคมีทั้งหมดมาแสดงใน Dropdown
+$chemicals = [];
+$chem_query = $conn->query("SELECT id, name FROM chemicals ORDER BY name ASC");
+if ($chem_query) {
+    while ($row = $chem_query->fetch_assoc()) {
+        $chemicals[] = $row;
+    }
 }
-$csrf = $_SESSION['csrf_token'];
 
-// -------------------------------
-// เมื่อส่งฟอร์ม
-// -------------------------------
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+// ------------------------
+// บันทึกภารกิจใหม่
+// ------------------------
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'add_quest') {
+    verify_csrf_token($_POST['csrf_token'] ?? '');
 
-    // ตรวจสอบ CSRF token
-    if (!isset($_POST['csrf_token']) || $_POST['csrf_token'] !== $csrf) {
-        http_response_code(403);
-        exit("❌ Invalid CSRF Token");
-    }
+    $title = trim($_POST['title'] ?? '');
+    $description = trim($_POST['description'] ?? '');
+    $target_chem1 = intval($_POST['target_chem1'] ?? 0);
+    $target_chem2 = intval($_POST['target_chem2'] ?? 0);
+    $target_product = trim($_POST['target_product'] ?? '');
+    $reward_points = intval($_POST['reward_points'] ?? 10);
 
-    // รับค่า + sanitize พื้นฐาน
-    $quest_name  = trim($_POST['quest_name']);
-    $quest_detail = trim($_POST['quest_detail']);
-    $reward_gp   = intval($_POST['reward_gp']);
-    $class_level = trim($_POST['class_level']);
-    $deadline    = trim($_POST['deadline']);
-    $teacher_id  = $_SESSION['user_id'];
-
-    // -------------------------------
-    // Validate
-    // -------------------------------
-
-    // 1) ตรวจชื่อเควส
-    if ($quest_name === "") {
-        $msg = "❌ ชื่อเควสจำเป็นต้องกรอก";
+    if (empty($title)) {
+        $msg = "❌ กรุณากรอกชื่อภารกิจ";
         $msg_type = "error";
-    }
-
-    // 2) reward GP ต้องเป็นเลขบวก
-    elseif ($reward_gp <= 0) {
-        $msg = "❌ คะแนน GP ต้องมากกว่า 0";
-        $msg_type = "error";
-    }
-
-    // 3) class_level ต้องเป็นค่าที่ระบบกำหนด
-    elseif (!in_array($class_level, ['ม1','ม2','ม3','ม4','ม5','ม6'])) {
-        $msg = "❌ ระดับชั้นไม่ถูกต้อง";
-        $msg_type = "error";
-    }
-
-    // 4) วันที่ต้องไม่ย้อนหลัง
-    elseif (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $deadline)) {
-        $msg = "❌ วันที่ไม่ถูกต้อง";
-        $msg_type = "error";
-    } elseif (strtotime($deadline) < strtotime(date("Y-m-d"))) {
-        $msg = "❌ กำหนดส่งต้องไม่น้อยกว่าวันปัจจุบัน";
-        $msg_type = "error";
-    }
-
-    // -------------------------------
-    // ถ้าทุกอย่างถูกต้อง → บันทึก
-    // -------------------------------
-    else {
+    } else {
         $stmt = $conn->prepare("
-            INSERT INTO quests
-            (quest_name, quest_detail, reward_gp, class_level, deadline, created_by)
-            VALUES (?,?,?,?,?,?)
+            INSERT INTO quests (teacher_id, title, description, target_chem1, target_chem2, target_product, reward_points) 
+            VALUES (?, ?, ?, ?, ?, ?, ?)
         ");
-        $stmt->bind_param(
-            "ssissi",
-            $quest_name,
-            $quest_detail,
-            $reward_gp,
-            $class_level,
-            $deadline,
-            $teacher_id
-        );
+        $stmt->bind_param("issiisi", $teacher_id, $title, $description, $target_chem1, $target_chem2, $target_product, $reward_points);
 
         if ($stmt->execute()) {
-            $msg = "✔ สร้างเควสสำเร็จแล้ว!";
+            $msg = "✔ สร้างภารกิจสำเร็จ! ให้นักเรียนเข้ามาทดลองได้เลย";
             $msg_type = "success";
+            systemLog($teacher_id, 'CREATE_QUEST', "Created quest: $title");
         } else {
-            $msg = "❌ ผิดพลาด: ไม่สามารถบันทึกข้อมูลได้";
+            $msg = "❌ เกิดข้อผิดพลาดในการบันทึกข้อมูล: " . $stmt->error;
             $msg_type = "error";
         }
+        $stmt->close();
     }
 }
+
+// ดึงภารกิจที่ครูคนนี้สร้างไว้
+$quests = [];
+$q_stmt = $conn->prepare("SELECT * FROM quests WHERE teacher_id = ? ORDER BY created_at DESC");
+$q_stmt->bind_param("i", $teacher_id);
+$q_stmt->execute();
+$res = $q_stmt->get_result();
+while ($row = $res->fetch_assoc()) {
+    $quests[] = $row;
+}
+$q_stmt->close();
+
+require_once 'header.php';
 ?>
-<!DOCTYPE html>
-<html lang="th">
-<head>
-<meta charset="UTF-8">
-<title>สร้างภารกิจ</title>
-<style>
-body { font-family:system-ui; background:#fde68a; padding:25px; }
-.card {
-    background:white; padding:22px; border-radius:18px;
-    max-width:600px; margin:0 auto; box-shadow:0 12px 25px rgba(0,0,0,0.15);
-}
-input, textarea, select {
-    width:100%; padding:10px; border-radius:10px;
-    border:1px solid #ccc; margin-top:8px;
-}
-button {
-    padding:12px 18px; background:#16a34a; color:white; border:none;
-    border-radius:10px; cursor:pointer; margin-top:15px;
-}
-button:hover { background:#15803d; }
 
-.msg.success {
-    background:#dcfce7; padding:10px; border-radius:10px;
-    color:#166534; margin-bottom:12px;
-}
-.msg.error {
-    background:#fecaca; padding:10px; border-radius:10px;
-    color:#b91c1c; margin-bottom:12px;
-}
-</style>
-</head>
-<body>
+<div style="display: flex; flex-wrap: wrap; gap: 20px;">
+    
+    <div class="card" style="flex: 1; min-width: 350px;">
+        <h2>🎯 สร้างภารกิจห้องแล็บ (New Quest)</h2>
+        <p style="color: #64748b;">ตั้งโจทย์ให้นักเรียนไขปริศนาทางเคมี</p>
 
-<div class="card">
-    <h2>🎮 สร้างภารกิจ / เควส</h2>
+        <?php if ($msg): ?>
+            <div class="msg <?= h($msg_type) ?>"><?= h($msg) ?></div>
+        <?php endif; ?>
 
-    <?php if($msg): ?>
-        <div class="msg <?= htmlspecialchars($msg_type) ?>">
-            <?= htmlspecialchars($msg) ?>
-        </div>
-    <?php endif; ?>
+        <form method="post">
+            <input type="hidden" name="csrf_token" value="<?= h($csrf) ?>">
+            <input type="hidden" name="action" value="add_quest">
 
-    <form method="post">
-        <input type="hidden" name="csrf_token" value="<?= $csrf ?>">
+            <label>ชื่อภารกิจ (Quest Title) <span style="color:red">*</span></label>
+            <input type="text" name="title" required placeholder="เช่น ปริศนาก๊าซลอยฟ้า">
 
-        <label>ชื่อเควส</label>
-        <input type="text" name="quest_name" required>
+            <label>คำใบ้ / รายละเอียดภารกิจ</label>
+            <textarea name="description" rows="3" placeholder="จงผสมสารเคมีเพื่อให้เกิดก๊าซไฮโดรเจน..."></textarea>
 
-        <label>รายละเอียดเควส</label>
-        <textarea name="quest_detail" rows="4"></textarea>
+            <label>สารเคมีเป้าหมายที่ 1 (ตัวแปรต้น - ไม่บังคับ)</label>
+            <select name="target_chem1" style="width:100%; padding:10px; border-radius:8px;">
+                <option value="0">-- ไม่ระบุ (ให้นักเรียนหาเอง) --</option>
+                <?php foreach ($chemicals as $c): ?>
+                    <option value="<?= $c['id'] ?>"><?= h($c['name']) ?></option>
+                <?php endforeach; ?>
+            </select>
 
-        <label>คะแนนรางวัล (GP)</label>
-        <input type="number" name="reward_gp" value="10" min="1" required>
+            <label style="margin-top:10px;">สารเคมีเป้าหมายที่ 2 (ตัวแปรตาม - ไม่บังคับ)</label>
+            <select name="target_chem2" style="width:100%; padding:10px; border-radius:8px;">
+                <option value="0">-- ไม่ระบุ (ให้นักเรียนหาเอง) --</option>
+                <?php foreach ($chemicals as $c): ?>
+                    <option value="<?= $c['id'] ?>"><?= h($c['name']) ?></option>
+                <?php endforeach; ?>
+            </select>
 
-        <label>มอบหมายให้ระดับชั้น</label>
-        <select name="class_level" required>
-            <option value="ม1">ม.1</option>
-            <option value="ม2">ม.2</option>
-            <option value="ม3">ม.3</option>
-            <option value="ม4">ม.4</option>
-            <option value="ม5">ม.5</option>
-            <option value="ม6">ม.6</option>
-        </select>
+            <label style="margin-top:10px;">ชื่อผลิตภัณฑ์ที่ต้องได้ (ผลลัพธ์การทำปฏิกิริยา)</label>
+            <input type="text" name="target_product" placeholder="เช่น Hydrogen Gas">
 
-        <label>กำหนดส่ง</label>
-        <input type="date" name="deadline" required>
+            <label>คะแนนรางวัล (EXP)</label>
+            <input type="number" name="reward_points" value="10" min="1" max="100" required>
 
-        <button type="submit">บันทึกเควส</button>
-    </form>
+            <button type="submit" class="btn-primary" style="width: 100%; background: #8b5cf6; margin-top: 15px;">
+                ✨ สร้างภารกิจ
+            </button>
+        </form>
+    </div>
 
-    <br>
-    <a href="dashboard_teacher.php">⬅ กลับแดชบอร์ดครู</a>
+    <div class="card" style="flex: 1.5; min-width: 400px;">
+        <h2>📜 ภารกิจของคุณ</h2>
+        
+        <?php if (count($quests) > 0): ?>
+            <div style="display: grid; gap: 15px;">
+                <?php foreach ($quests as $q): ?>
+                    <div style="border: 1px solid #e2e8f0; padding: 15px; border-radius: 12px; background: #f8fafc; border-left: 5px solid #8b5cf6;">
+                        <h3 style="margin: 0 0 5px 0; color: #0f172a;"><?= h($q['title']) ?> <span style="font-size: 0.8em; background:#f59e0b; color:white; padding: 2px 8px; border-radius: 20px;">+<?= $q['reward_points'] ?> EXP</span></h3>
+                        <p style="margin: 0; font-size: 0.9em; color: #64748b;"><?= h($q['description']) ?></p>
+                        <div style="margin-top: 10px; font-size: 0.85em; color: #475569;">
+                            <strong>เป้าหมายผลลัพธ์:</strong> <?= $q['target_product'] ? h($q['target_product']) : 'ไม่ระบุ' ?>
+                        </div>
+                    </div>
+                <?php endforeach; ?>
+            </div>
+        <?php else: ?>
+            <p style="color: #64748b; text-align: center; padding: 30px;">คุณยังไม่ได้สร้างภารกิจใดๆ</p>
+        <?php endif; ?>
+    </div>
+
 </div>
 
-</body>
-</html>
+<?php require_once 'footer.php'; ?>

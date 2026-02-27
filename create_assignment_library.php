@@ -1,204 +1,188 @@
 <?php
-require_once 'auth.php';
-requireRole(['teacher','developer']);
+// create_assignment_library.php
+require_once 'config.php';
 require_once 'db.php';
+require_once 'auth.php';
+
+// บังคับสิทธิ์เฉพาะครูและผู้พัฒนา
+requireRole(['teacher', 'developer']);
 
 $msg = "";
 $msg_type = "";
+$page_title = "เพิ่มงานเข้าคลัง";
+
+// สร้าง CSRF Token
+$csrf = generate_csrf_token();
 
 // ------------------------
-// CSRF Token
-// ------------------------
-if (empty($_SESSION['csrf_token'])) {
-    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
-}
-$csrf = $_SESSION['csrf_token'];
-
-// ------------------------
-// เมื่อกด POST
+// เมื่อฟอร์มถูก Submit
 // ------------------------
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
-    // ตรวจ CSRF
-    if (!isset($_POST['csrf_token']) || $_POST['csrf_token'] !== $csrf) {
-        http_response_code(403);
-        exit("Invalid CSRF token");
-    }
+    // 1. ตรวจสอบ CSRF Token (ป้องกันการยิง Request จากเว็บอื่น)
+    verify_csrf_token($_POST['csrf_token'] ?? '');
 
     $teacher_id  = $_SESSION['user_id'];
     $title       = trim($_POST['title'] ?? '');
     $description = trim($_POST['description'] ?? '');
 
-    if ($title === "") {
+    // 2. ตรวจสอบค่าว่าง
+    if (empty($title)) {
         $msg = "❌ กรุณากรอกชื่องาน";
         $msg_type = "error";
     } else {
 
-        // ค่าเริ่มต้น
         $file_path = NULL;
         $file_type = NULL;
+        $upload_success = true; // Flag สำหรับเช็คสถานะการอัปโหลด
 
-        // ------------------------
-        // ตรวจการอัปโหลดไฟล์
-        // ------------------------
-        if (!empty($_FILES['file_upload']['name'])) {
-
-            $allowedExtensions = ['pdf','doc','docx','ppt','pptx','jpg','jpeg','png'];
-            $maxFileSize = 5 * 1024 * 1024; // 5 MB
-
+        // 3. จัดการระบบอัปโหลดไฟล์อย่างปลอดภัย
+        if (isset($_FILES['file_upload']) && $_FILES['file_upload']['error'] !== UPLOAD_ERR_NO_FILE) {
+            
+            $tmpName  = $_FILES['file_upload']['tmp_name'];
+            $fileSize = $_FILES['file_upload']['size'];
             $originalName = $_FILES['file_upload']['name'];
-            $tmpName      = $_FILES['file_upload']['tmp_name'];
-            $fileSize     = $_FILES['file_upload']['size'];
-
-            // เอาเฉพาะ extension (ไม่ใช้ชื่อไฟล์มาโดยตรง)
             $ext = strtolower(pathinfo($originalName, PATHINFO_EXTENSION));
 
-            // ตรวจขนาดไฟล์
-            if ($fileSize > $maxFileSize) {
+            // 3.1 ตรวจสอบ Error จาก PHP Upload
+            if ($_FILES['file_upload']['error'] !== UPLOAD_ERR_OK) {
+                $msg = "❌ เกิดข้อผิดพลาดในการอัปโหลดไฟล์ (Error Code: " . $_FILES['file_upload']['error'] . ")";
+                $msg_type = "error";
+                $upload_success = false;
+            }
+            // 3.2 ตรวจสอบขนาดไฟล์
+            elseif ($fileSize > MAX_UPLOAD_SIZE) {
                 $msg = "❌ ไฟล์ใหญ่เกินกำหนด (สูงสุด 5 MB)";
                 $msg_type = "error";
-            }
-            // ตรวจชนิดไฟล์
-            elseif (!in_array($ext, $allowedExtensions)) {
-                $msg = "❌ ไฟล์ชนิดนี้ไม่อนุญาต: .$ext";
-                $msg_type = "error";
+                $upload_success = false;
             }
             else {
-                // สร้างชื่อใหม่แบบปลอดภัย
-                $safeFileName = time() . "_" . bin2hex(random_bytes(8)) . ".$ext";
+                // 3.3 ตรวจสอบ MIME Type เชิงลึกจากเนื้อหาไฟล์จริง (MIME Sniffing)
+                $finfo = finfo_open(FILEINFO_MIME_TYPE);
+                $mime_type = finfo_file($finfo, $tmpName);
+                finfo_close($finfo);
 
-                // โฟลเดอร์ uploads ต้องไม่มีสิทธิ์ execute (ตั้งใน .htaccess)
-                $targetPath = "uploads/" . $safeFileName;
+                // รายการ MIME Types ที่อนุญาต
+                $allowedMimeTypes = [
+                    'application/pdf' => 'pdf',
+                    'application/msword' => 'doc',
+                    'application/vnd.openxmlformats-officedocument.wordprocessingml.document' => 'docx',
+                    'application/vnd.ms-powerpoint' => 'ppt',
+                    'application/vnd.openxmlformats-officedocument.presentationml.presentation' => 'pptx',
+                    'image/jpeg' => 'jpg',
+                    'image/png' => 'png'
+                ];
 
-                if (move_uploaded_file($tmpName, $targetPath)) {
-                    $file_path = $targetPath;
-                    $file_type = $ext;
-                } else {
-                    $msg = "❌ ไม่สามารถอัปโหลดไฟล์ได้";
+                if (!array_key_exists($mime_type, $allowedMimeTypes)) {
+                    $msg = "❌ ชนิดไฟล์ไม่อนุญาต (ตรวจพบเนื้อหาไฟล์เป็น: $mime_type)";
                     $msg_type = "error";
+                    $upload_success = false;
+                } else {
+                    // 3.4 สร้างชื่อไฟล์ใหม่ ป้องกันการเดาชื่อและการรันสคริปต์ (Hash filename)
+                    $safeFileName = date('Ymd_His') . "_" . bin2hex(random_bytes(8)) . "." . $allowedMimeTypes[$mime_type];
+                    $targetPath = UPLOAD_DIR . $safeFileName;
+
+                    // ย้ายไฟล์จาก Temp ไปยังโฟลเดอร์ Upload
+                    if (move_uploaded_file($tmpName, $targetPath)) {
+                        $file_path = "uploads/" . $safeFileName; // เก็บแค่ Relative path ลง DB
+                        $file_type = $allowedMimeTypes[$mime_type];
+                    } else {
+                        $msg = "❌ ระบบไม่สามารถบันทึกไฟล์ลงเซิร์ฟเวอร์ได้";
+                        $msg_type = "error";
+                        $upload_success = false;
+                    }
                 }
             }
         }
 
-        // ------------------------
-        // INSERT ลงฐานข้อมูล
-        // ------------------------
-        if ($msg === "") {
+        // 4. INSERT ข้อมูลลงฐานข้อมูล (ทำเมื่ออัปโหลดไฟล์ผ่าน หรือไม่มีการอัปโหลดไฟล์)
+        if ($msg === "" && $upload_success) {
             $stmt = $conn->prepare("
-                INSERT INTO assignment_library 
-                (teacher_id, title, description, file_path, file_type)
+                INSERT INTO assignment_library (teacher_id, title, description, file_path, file_type)
                 VALUES (?, ?, ?, ?, ?)
             ");
-            $stmt->bind_param("issss",
-                $teacher_id,
-                $title,
-                $description,
-                $file_path,
-                $file_type
-            );
+            
+            $stmt->bind_param("issss", $teacher_id, $title, $description, $file_path, $file_type);
 
-            try {
-                if ($stmt->execute()) {
-                    $msg = "✔ เพิ่มงานเข้าคลังสำเร็จแล้ว!";
-                    $msg_type = "success";
-                } else {
-                    $msg = "❌ เกิดข้อผิดพลาดในการบันทึกข้อมูล";
-                    $msg_type = "error";
-                }
-            } catch (Exception $e) {
-                error_log("assignment insert error: " . $e->getMessage());
-                $msg = "❌ ระบบเกิดข้อผิดพลาด (โปรดดู error_log)";
+            if ($stmt->execute()) {
+                $msg = "✔ เพิ่มงานเข้าคลังสำเร็จแล้ว!";
+                $msg_type = "success";
+                
+                // ล้างค่าฟอร์มหลังบันทึกเสร็จ
+                $_POST = array(); 
+            } else {
+                error_log("Insert Assignment Error: " . $stmt->error);
+                $msg = "❌ เกิดข้อผิดพลาดในการบันทึกข้อมูลลงฐานข้อมูล";
                 $msg_type = "error";
             }
+            $stmt->close();
         }
     }
 }
+
+// เรียกใช้ Header
+require_once 'header.php';
 ?>
-<!DOCTYPE html>
-<html lang="th">
-<head>
-<meta charset="UTF-8">
-<title>เพิ่มงานเข้าคลัง</title>
-<style>
-body { font-family:system-ui; background:#fef3c7; padding:20px; }
-.card {
-    background:white; padding:20px; border-radius:16px;
-    box-shadow:0 10px 25px rgba(0,0,0,0.15); max-width:600px; margin:0 auto;
-}
-input, textarea {
-    width:100%; padding:12px; border-radius:10px; border:1px solid #ccc; margin:10px 0;
-}
-button {
-    padding:12px 20px; background:#2563eb; color:white; border:none;
-    border-radius:10px; cursor:pointer;
-}
-button:hover { background:#1d4ed8; }
-.msg { padding:10px; border-radius:10px; margin-bottom:12px; }
-.msg.success { background:#dcfce7; color:#166534; }
-.msg.error { background:#fee2e2; color:#991b1b; }
 
-.file-btn {
-    display:inline-block;
-    padding:10px 14px;
-    background:#0ea5e9;
-    color:white;
-    border-radius:10px;
-    cursor:pointer;
-    margin-top:10px;
-}
-#fileInput{ display:none; }
-</style>
-</head>
-<body>
-
-<div class="card">
+<div class="card" style="max-width: 600px; margin: 0 auto;">
     <h2>📚 เพิ่มงานเข้าคลัง</h2>
+    <p style="color: #64748b;">สร้างชิ้นงานหรือเอกสารเพื่อมอบหมายให้นักเรียน</p>
 
-    <?php if($msg): ?>
-        <div class="msg <?= htmlspecialchars($msg_type) ?>">
-            <?= htmlspecialchars($msg) ?>
+    <?php if ($msg): ?>
+        <div class="msg <?= h($msg_type) ?>">
+            <?= h($msg) ?>
         </div>
     <?php endif; ?>
 
     <form method="post" enctype="multipart/form-data">
+        <input type="hidden" name="csrf_token" value="<?= h($csrf) ?>">
 
-        <input type="hidden" name="csrf_token" value="<?= $csrf ?>">
+        <label for="title">ชื่องาน <span style="color:red;">*</span></label>
+        <input type="text" id="title" name="title" value="<?= h($_POST['title'] ?? '') ?>" required placeholder="เช่น ใบงานเคมีบทที่ 1">
 
-        <label>ชื่องาน</label>
-        <input type="text" name="title" required>
+        <label for="description">รายละเอียด / คำสั่ง</label>
+        <textarea id="description" name="description" rows="5" placeholder="อธิบายสิ่งที่นักเรียนต้องทำ..."><?= h($_POST['description'] ?? '') ?></textarea>
 
-        <label>รายละเอียดงาน</label>
-        <textarea name="description" rows="4"></textarea>
+        <label>ไฟล์แนบประกอบการสอน (ไม่บังคับ)</label>
+        <div style="background: #f1f5f9; padding: 15px; border-radius: 10px; border: 1px dashed #cbd5e1; text-align: center;">
+            <button type="button" class="btn-primary" style="background:#0ea5e9; margin-bottom: 10px;" onclick="document.getElementById('fileInput').click();">
+                📁 เลือกไฟล์จากเครื่อง
+            </button>
+            <input type="file" name="file_upload" id="fileInput" style="display:none;" accept=".pdf,.doc,.docx,.ppt,.pptx,.jpg,.jpeg,.png">
+            <span id="fileName" style="display:block; color:#64748b; font-size: 0.9em;">
+                ยังไม่ได้เลือกไฟล์ (รองรับ PDF, Word, Powerpoint, JPG, PNG ขนาดไม่เกิน 5MB)
+            </span>
+        </div>
 
-        <label>ไฟล์แนบ (ไม่บังคับ)</label>
-
-        <button type="button" class="file-btn"
-            onclick="document.getElementById('fileInput').click();">
-            📁 เลือกไฟล์จากเครื่อง
+        <button type="submit" class="btn-primary" style="width: 100%; margin-top: 20px; font-size: 1.1rem; padding: 15px;">
+            💾 บันทึกงานลงคลัง
         </button>
-
-        <input type="file" name="file_upload" id="fileInput">
-
-        <span id="fileName" style="display:block;margin-top:8px;color:#555;">
-            ยังไม่ได้เลือกไฟล์
-        </span>
-
-        <script>
-            document.getElementById('fileInput').addEventListener('change',function(){
-                if (this.files.length > 0) {
-                    document.getElementById('fileName').innerText =
-                        "ไฟล์ที่เลือก: " + this.files[0].name;
-                }
-            });
-        </script>
-
-        <button type="submit">บันทึกงานลงคลัง</button>
-
     </form>
 
-    <br>
-    <a href="assignment_library.php">📚 กลับไปคลังงาน</a>
+    <div style="text-align: center; margin-top: 20px;">
+        <a href="assignment_library.php" style="color: #475569; text-decoration: none; font-weight: bold;">
+            ⬅️ กลับไปหน้าคลังงาน
+        </a>
+    </div>
 </div>
 
-</body>
-</html>
+<script>
+    // สคริปต์สำหรับแสดงชื่อไฟล์เมื่อเลือกไฟล์เสร็จ
+    document.getElementById('fileInput').addEventListener('change', function() {
+        const fileSpan = document.getElementById('fileName');
+        if (this.files.length > 0) {
+            const file = this.files[0];
+            const sizeKB = (file.size / 1024).toFixed(2);
+            fileSpan.innerHTML = `<strong style="color:#0f172a;">${file.name}</strong> (${sizeKB} KB)`;
+            fileSpan.style.color = "#10b981"; // สีเขียวเมื่อเลือกไฟล์แล้ว
+        } else {
+            fileSpan.innerText = "ยังไม่ได้เลือกไฟล์";
+            fileSpan.style.color = "#64748b";
+        }
+    });
+</script>
+
+<?php
+// เรียกใช้ Footer
+require_once 'footer.php';
+?>

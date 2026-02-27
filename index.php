@@ -1,6 +1,7 @@
 <?php
 require_once 'db.php';
 require_once 'auth.php';
+require_once 'logger.php'; // เพิ่มไฟล์ Logger
 
 // แสดง error ตอนพัฒนา (ลบเมื่อออนไลน์)
 ini_set('display_errors',1);
@@ -34,11 +35,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && empty($error)) {
         $error = "กรุณากรอกข้อมูลให้ครบ";
     } else {
 
-        // ⭐ แก้ไขจุดที่ Error:
-        // ลบ subject, teacher_department ออก เพราะในตาราง users ไม่มี
-        // เปลี่ยนเป็นเลือก class_level มาแทน
+        // ⭐ ปรับปรุง Query: เพิ่มการดึงค่า is_deleted และ class_id
         $stmt = $conn->prepare("
-            SELECT id, username, password, display_name, role, class_level
+            SELECT id, username, password, display_name, role, class_level, class_id, is_deleted
             FROM users
             WHERE username = ?
             LIMIT 1
@@ -47,20 +46,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && empty($error)) {
         $stmt->execute();
         $stmt->store_result();
 
-        // Bind ตัวแปรให้ครบตามจำนวนที่ SELECT มา (6 ตัว)
+        // Bind ตัวแปรให้ครบตามจำนวนที่ SELECT มา (8 ตัว)
         $stmt->bind_result(
             $id,
             $db_username,
             $db_password,
             $display_name,
             $role,
-            $class_level
+            $class_level,
+            $class_id,
+            $is_deleted
         );
 
         if ($stmt->num_rows === 1) {
             $stmt->fetch();
 
-            if (password_verify($password, $db_password)) {
+            // เช็คว่า User โดนลบ (Soft Delete) ไปหรือยัง
+            if ($is_deleted == 1) {
+                $error = "บัญชีนี้ถูกระงับหรือถูกลบออกจากระบบแล้ว";
+                systemLog($id, 'LOGIN_FAILED', "Attempted to login with soft-deleted account: $username");
+            } 
+            else if (password_verify($password, $db_password)) {
 
                 session_regenerate_id(true);
 
@@ -68,10 +74,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && empty($error)) {
                 $_SESSION['username']      = $db_username;
                 $_SESSION['display_name']  = $display_name;
                 $_SESSION['role']          = $role;
-                $_SESSION['class_level']   = $class_level; // เก็บชั้นเรียนแทน
+                $_SESSION['class_level']   = $class_level; 
+                $_SESSION['class_id']      = $class_id; // เก็บ class_id ระบบใหม่
 
                 $_SESSION['login_attempts'] = 0;
                 $_SESSION['last_attempt_time'] = time();
+
+                // 📝 บันทึก Log การเข้าสู่ระบบสำเร็จ
+                systemLog($id, 'LOGIN_SUCCESS', "User $username logged in successfully as $role");
 
                 switch ($role) {
                     case 'developer': header("Location: dashboard_dev.php"); break;
@@ -86,12 +96,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && empty($error)) {
                 $error = "รหัสผ่านไม่ถูกต้อง";
                 $_SESSION['login_attempts']++;
                 $_SESSION['last_attempt_time'] = time();
+                systemLog(null, 'LOGIN_FAILED', "Invalid password for username: $username");
             }
 
         } else {
             $error = "ไม่พบผู้ใช้งานนี้";
             $_SESSION['login_attempts']++;
             $_SESSION['last_attempt_time'] = time();
+            systemLog(null, 'LOGIN_FAILED', "Username not found: $username");
         }
 
         $stmt->close();
@@ -104,8 +116,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && empty($error)) {
 <meta charset="UTF-8">
 <title>Login</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Itim&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Itim&display=swap" rel="stylesheet">
 <style>
 body {
     margin:0; padding:0;
@@ -117,14 +129,12 @@ body {
     overflow:hidden;
 
     background:
-        /* ⭐ Metallic Yellow Shine */
         linear-gradient(
             135deg,
             rgba(255,222,100,0.35),
             rgba(255,240,180,0.25),
             rgba(255,230,80,0.45)
         ),
-        /* ⭐ Modern Blue–Yellow */
         linear-gradient(
             135deg,
             #0048B4,
@@ -133,7 +143,6 @@ body {
             #FFD000,
             #FFEA55
         ),
-        /* ⭐ Blue–Yellow Flag */
         linear-gradient(
             to bottom,
             #0057B7 0%,
@@ -141,7 +150,6 @@ body {
             #FFD600 50%,
             #FFD600 100%
         ),
-        /* ⭐ Glow highlight */
         radial-gradient(circle at 65% 70%, rgba(255,255,255,0.18), transparent 70%);
 
     background-size:
@@ -157,21 +165,18 @@ body {
         glowPulse 9s ease-in-out infinite;
 }
 
-/* ✨ Metallic Shine */
 @keyframes goldShine {
     0%   { filter: brightness(1) contrast(1); }
     50%  { filter: brightness(1.25) contrast(1.15); }
     100% { filter: brightness(1) contrast(1); }
 }
 
-/* 🌈 Gradient flow ช้า */
 @keyframes techFlow {
     0%   { background-position: 50% 0%; }
     50%  { background-position: 50% 100%; }
     100% { background-position: 50% 0%; }
 }
 
-/* 🌬 พริ้วลมนุ่ม (Soft Wave) */
 @keyframes flagWaveSoft {
     0%   { transform: skewX(0deg) translateX(0px); }
     25%  { transform: skewX(-1.5deg) translateX(-7px); }
@@ -180,7 +185,6 @@ body {
     100% { transform: skewX(0deg) translateX(0px); }
 }
 
-/* 💫 Glow pulse */
 @keyframes glowPulse {
     0%   { opacity:1; }
     50%  { opacity:0.9; }
@@ -199,6 +203,7 @@ label { display:block; margin:10px 0 5px; }
 input {
     width:100%; padding:12px; border-radius:12px; border:none;
     margin-bottom:15px; font-size:1rem; outline:none; background:rgba(255,255,255,0.7);
+    box-sizing: border-box;
 }
 .btn-login {
     width:100%; padding:12px; border:none; border-radius:12px;
@@ -213,7 +218,6 @@ input {
 .school-logo {
     text-align: center;
     margin-bottom: 25px;
-
     animation: fadeIn 1.2s ease-out;
 }
 
@@ -221,41 +225,34 @@ input {
     width: 300px; 
     height: auto;
     filter: drop-shadow(0 6px 10px rgba(0,0,0,0.35));
-
-    /* ทำให้โลโก้ดูมีชีวิต + หรู */
     animation:
         floatLogo 6s ease-in-out infinite,
-        glowPulse 4s ease-in-out infinite;
+        glowPulseLogo 4s ease-in-out infinite;
 }
 
 .school-title {
     display: block;
     margin-top: 10px;
-
     font-size: 1.35rem;
     font-weight: 700;
     color: #ffffff;
     letter-spacing: 1px;
     text-shadow: 0 2px 6px rgba(0,0,0,0.4);
-
     animation: fadeInText 1.8s ease-out;
 }
 
-/* เอฟเฟกต์โลโก้ลอยเบา ๆ */
 @keyframes floatLogo {
     0%   { transform: translateY(0px); }
     50%  { transform: translateY(-6px); }
     100% { transform: translateY(0px); }
 }
 
-/* แสงกระพริบแบบ Premium */
-@keyframes glowPulse {
+@keyframes glowPulseLogo {
     0%   { filter: drop-shadow(0 6px 12px rgba(255,255,200,0.25)); }
     50%  { filter: drop-shadow(0 8px 15px rgba(255,240,150,0.45)); }
     100% { filter: drop-shadow(0 6px 12px rgba(255,255,200,0.25)); }
 }
 
-/* เฟดเข้า */
 @keyframes fadeIn {
     from { opacity: 0; transform: translateY(-10px); }
     to   { opacity: 1; transform: translateY(0px); }
@@ -265,13 +262,12 @@ input {
     from { opacity: 0; transform: translateY(6px); }
     to   { opacity: 1; transform: translateY(0px); }
 }
-
 </style>
 </head>
 <body>
 
 <div class="school-logo">
-    <img src="logo.png" alt="School Logo">
+    <img src="logo.png" alt="School Logo" onerror="this.style.display='none'">
     <span class="school-title">Bankha Withaya School</span>
 </div>
 
@@ -292,7 +288,6 @@ input {
 
         <button class="btn-login" type="submit">เข้าสู่ระบบ</button>
     </form>
-
 </div>
 </body>
 </html>
