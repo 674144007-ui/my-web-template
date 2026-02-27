@@ -1,241 +1,247 @@
 <?php
-// edit_user.php - ระบบแก้ไขข้อมูลผู้ใช้และจัดการความปลอดภัย (Phase 2 - Grouped Dropdown)
+/**
+ * edit_user.php - แก้ไขข้อมูลผู้ใช้งาน (Phase 3: Dynamic Class Integration)
+ */
 require_once 'config.php';
 require_once 'db.php';
 require_once 'auth.php';
-require_once 'logger.php';
 
-requireRole(['developer']);
+requireRole(['developer', 'admin']);
 
-$page_title = "แก้ไขข้อมูลผู้ใช้งาน";
-$msg = "";
-$msg_type = "";
-$new_password_show = "";
-$csrf = generate_csrf_token();
+$page_title = "แก้ไขผู้ใช้งาน (Edit User)";
+$success_msg = "";
+$error_msg = "";
 
-$target_id = isset($_GET['id']) ? intval($_GET['id']) : 0;
-
-if ($target_id <= 0) die("❌ ไม่พบรหัสผู้ใช้งาน <br><a href='user_manager.php'>กลับไปหน้าจัดการผู้ใช้</a>");
-
-// ป้องกันแก้ Dev ด้วยกัน
-if ($target_id !== $_SESSION['user_id']) {
-    $check_dev = $conn->prepare("SELECT role FROM users WHERE id = ?");
-    $check_dev->bind_param("i", $target_id);
-    $check_dev->execute();
-    $res_dev = $check_dev->get_result();
-    if ($res_dev->num_rows > 0 && $res_dev->fetch_assoc()['role'] === 'developer') {
-        die("❌ ไม่อนุญาตให้แก้ไขข้อมูลของ Developer ท่านอื่น <br><a href='user_manager.php'>กลับไปหน้าจัดการผู้ใช้</a>");
-    }
-    $check_dev->close();
+if (!isset($_GET['id']) || empty($_GET['id'])) {
+    header("Location: user_manager.php");
+    exit;
 }
 
-// -----------------------------
-// จัดการคำสั่ง POST
-// -----------------------------
+$target_user_id = intval($_GET['id']);
+
+// จัดการการอัปเดตข้อมูล
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    verify_csrf_token($_POST['csrf_token'] ?? '');
-    $action = $_POST['action'] ?? '';
-
-    if ($action === 'update_info') {
-        $display_name = trim($_POST['display_name'] ?? '');
-        $role = $_POST['role'] ?? 'student';
-        $class_id = intval($_POST['class_id'] ?? 0);
-        $final_class_id = ($class_id > 0) ? $class_id : NULL;
-
-        if ($role === 'parent' || $role === 'developer') $final_class_id = NULL;
-
-        if (empty($display_name)) {
-            $msg = "❌ กรุณากรอกชื่อ-นามสกุล";
-            $msg_type = "error";
+    if (empty($_POST['csrf_token']) || !hash_equals($_SESSION['csrf_token'], $_POST['csrf_token'])) {
+        $error_msg = "CSRF Token ไม่ถูกต้อง";
+    } else {
+        $display_name = trim($_POST['display_name']);
+        $role = $_POST['role'];
+        $class_id = !empty($_POST['class_id']) ? intval($_POST['class_id']) : null;
+        $class_level_text = null;
+        
+        if (empty($display_name) || empty($role)) {
+            $error_msg = "กรุณากรอกข้อมูลที่จำเป็นให้ครบ";
         } else {
-            $stmt = $conn->prepare("UPDATE users SET display_name = ?, role = ?, class_id = ? WHERE id = ?");
-            $stmt->bind_param("ssii", $display_name, $role, $final_class_id, $target_id);
-            if ($stmt->execute()) {
-                $msg = "✔ อัปเดตข้อมูลทั่วไปสำเร็จ!";
-                $msg_type = "success";
-                systemLog($_SESSION['user_id'], 'UPDATE_USER', "Updated info for user ID: $target_id");
+            // ดึงชื่อห้องไปเก็บเผื่อระบบเก่า
+            if ($role === 'student' && $class_id) {
+                $stmt_class = $conn->prepare("SELECT class_name FROM classes WHERE id = ?");
+                $stmt_class->bind_param("i", $class_id);
+                $stmt_class->execute();
+                $res_class = $stmt_class->get_result()->fetch_assoc();
+                if ($res_class) { $class_level_text = $res_class['class_name']; }
+                $stmt_class->close();
             } else {
-                $msg = "❌ เกิดข้อผิดพลาดในการอัปเดตข้อมูล";
-                $msg_type = "error";
+                $class_id = null; // ถ้าไม่ใช่ Role นักเรียน ให้เคลียร์ห้องทิ้ง
+            }
+
+            // ถ้าระบุรหัสผ่านใหม่
+            if (!empty($_POST['password'])) {
+                $hashed_password = password_hash($_POST['password'], PASSWORD_DEFAULT);
+                $stmt = $conn->prepare("UPDATE users SET display_name=?, role=?, class_id=?, class_level=?, password=? WHERE id=?");
+                $stmt->bind_param("ssissi", $display_name, $role, $class_id, $class_level_text, $hashed_password, $target_user_id);
+            } else {
+                $stmt = $conn->prepare("UPDATE users SET display_name=?, role=?, class_id=?, class_level=? WHERE id=?");
+                $stmt->bind_param("ssisi", $display_name, $role, $class_id, $class_level_text, $target_user_id);
+            }
+
+            if ($stmt->execute()) {
+                $success_msg = "อัปเดตข้อมูลผู้ใช้งานสำเร็จ!";
+            } else {
+                $error_msg = "เกิดข้อผิดพลาด: " . $stmt->error;
             }
             $stmt->close();
         }
     }
-    elseif ($action === 'reset_password') {
-        $random_digits = rand(1000, 9999);
-        $plain_new_password = "bankha" . $random_digits;
-        $hashed_password = password_hash($plain_new_password, PASSWORD_DEFAULT);
-
-        $stmt = $conn->prepare("UPDATE users SET password = ? WHERE id = ?");
-        $stmt->bind_param("si", $hashed_password, $target_id);
-        if ($stmt->execute()) {
-            $msg = "✔ รีเซ็ตรหัสผ่านเรียบร้อยแล้ว กรุณาคัดลอกรหัสผ่านด้านล่างส่งให้ผู้ใช้งาน";
-            $msg_type = "success";
-            $new_password_show = $plain_new_password;
-            systemLog($_SESSION['user_id'], 'RESET_PASSWORD', "Reset password for user ID: $target_id");
-        }
-        $stmt->close();
-    }
-    elseif ($action === 'toggle_status') {
-        $new_status = intval($_POST['new_status'] ?? 0);
-        $stmt = $conn->prepare("UPDATE users SET is_deleted = ? WHERE id = ?");
-        $stmt->bind_param("ii", $new_status, $target_id);
-        if ($stmt->execute()) {
-            $msg = $new_status === 1 ? "✔ ระงับบัญชีการใช้งานเรียบร้อยแล้ว" : "✔ กู้คืนบัญชีการใช้งานเรียบร้อยแล้ว";
-            $msg_type = "success";
-            $log_action = $new_status === 1 ? 'SUSPEND_USER' : 'RESTORE_USER';
-            systemLog($_SESSION['user_id'], $log_action, "Status changed for user ID: $target_id");
-        }
-        $stmt->close();
-    }
 }
 
-// ดึงข้อมูลล่าสุด
-$stmt = $conn->prepare("SELECT username, display_name, role, class_id, is_deleted, created_at FROM users WHERE id = ?");
-$stmt->bind_param("i", $target_id);
+// ดึงข้อมูลผู้ใช้งานปัจจุบันมาแสดง
+$user_data = null;
+// Join ตาราง classes เพื่อเอา level ออกมาใช้ pre-select ใน dropdown
+$sql = "SELECT u.*, c.level as current_level FROM users u LEFT JOIN classes c ON u.class_id = c.id WHERE u.id = ?";
+$stmt = $conn->prepare($sql);
+$stmt->bind_param("i", $target_user_id);
 $stmt->execute();
 $res = $stmt->get_result();
-if ($res->num_rows === 0) die("❌ ไม่พบข้อมูลผู้ใช้งาน");
-$user_data = $res->fetch_assoc();
-$stmt->close();
-
-// -----------------------------
-// ดึงข้อมูลชั้นเรียนมาจัดกลุ่ม (Group by Level)
-// -----------------------------
-$grouped_classes = [];
-$res_classes = $conn->query("SELECT id, class_name, level FROM classes ORDER BY level ASC, room ASC");
-if ($res_classes) {
-    while ($row = $res_classes->fetch_assoc()) {
-        $lvl = $row['level'] ? $row['level'] : 'อื่นๆ';
-        $grouped_classes[$lvl][] = $row;
-    }
+if ($res->num_rows > 0) {
+    $user_data = $res->fetch_assoc();
+} else {
+    echo "ไม่พบผู้ใช้งานนี้"; exit;
 }
+$stmt->close();
 
 require_once 'header.php';
 ?>
 
+<link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;600&display=swap" rel="stylesheet">
 <style>
-    .edit-container { display: flex; gap: 20px; flex-wrap: wrap; align-items: flex-start; }
-    .edit-panel { background: white; padding: 25px; border-radius: 16px; box-shadow: 0 4px 15px rgba(0,0,0,0.05); flex: 1; min-width: 300px; }
-    .panel-header { font-size: 1.2rem; font-weight: bold; margin-bottom: 20px; padding-bottom: 10px; border-bottom: 2px solid #e2e8f0; color: #0f172a; }
-    .status-badge { padding: 5px 12px; border-radius: 20px; font-size: 0.9em; font-weight: bold; }
-    .status-active { background: #dcfce7; color: #166534; }
-    .status-suspended { background: #fee2e2; color: #991b1b; }
-    .password-display { background: #fffbeb; border: 2px dashed #f59e0b; padding: 20px; text-align: center; border-radius: 12px; margin-top: 15px; }
-    .password-display .pwd { font-size: 2rem; font-weight: bold; color: #b45309; letter-spacing: 2px; user-select: all; }
+    /* ใช้ CSS เดียวกับ add_user.php เพื่อความสะอาด */
+    body { background-color: #f8fafc; font-family: 'Sarabun', sans-serif; }
+    .form-container { max-width: 800px; margin: 40px auto; background: #ffffff; padding: 40px; border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.05); border: 1px solid #e2e8f0; }
+    .form-title { font-size: 1.8rem; font-weight: bold; color: #1e293b; margin-bottom: 10px; border-bottom: 2px solid #e2e8f0; padding-bottom: 15px; display:flex; justify-content: space-between; align-items:center; }
+    .form-group { margin-bottom: 20px; }
+    .form-label { display: block; font-weight: 600; color: #334155; margin-bottom: 8px; font-size: 1rem; }
+    .form-control, .form-select { width: 100%; padding: 12px 15px; border: 1px solid #cbd5e1; border-radius: 10px; font-family: inherit; font-size: 1rem; color: #1e293b; background: #f8fafc; box-sizing: border-box; transition: 0.3s; }
+    .form-control:focus, .form-select:focus { border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2); outline: none; background: #ffffff; }
+    .flex-row { display: flex; gap: 20px; } .flex-row > div { flex: 1; }
+    .class-selection-block { background: #eff6ff; border: 1px solid #bfdbfe; padding: 20px; border-radius: 10px; margin-top: 10px; display: none; animation: fadeIn 0.4s ease; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+    .btn-submit { background: linear-gradient(135deg, #f59e0b, #d97706); color: white; border: none; padding: 15px; border-radius: 10px; font-size: 1.1rem; font-weight: bold; cursor: pointer; width: 100%; margin-top: 20px; box-shadow: 0 10px 20px rgba(245, 158, 11, 0.3); transition: 0.3s; }
+    .btn-submit:hover { transform: translateY(-3px); box-shadow: 0 15px 25px rgba(245, 158, 11, 0.4); }
+    .btn-back { background: #e2e8f0; color: #334155; padding: 8px 15px; border-radius: 8px; text-decoration: none; font-size: 1rem; }
+    .alert { padding: 15px; border-radius: 10px; margin-bottom: 20px; font-weight: bold; }
+    .alert-success { background: #dcfce7; color: #166534; border: 1px solid #bbf7d0; }
+    .alert-danger { background: #fee2e2; color: #991b1b; border: 1px solid #fecaca; }
 </style>
 
-<div style="margin-bottom: 20px;">
-    <a href="user_manager.php" style="color: #64748b; text-decoration: none; font-weight: bold;">⬅ กลับหน้ารายชื่อผู้ใช้</a>
-</div>
+<div class="form-container">
+    <div class="form-title">
+        <span>✏️ แก้ไขข้อมูล (<?= htmlspecialchars($user_data['username']) ?>)</span>
+        <a href="user_manager.php" class="btn-back">◀ กลับหน้ารายชื่อ</a>
+    </div>
 
-<h2>⚙️ จัดการข้อมูลบัญชีผู้ใช้ (Edit User)</h2>
-<p style="color: #64748b; margin-top: -10px; margin-bottom: 20px;">กำลังจัดการบัญชี: <strong><?= h($user_data['username']) ?></strong></p>
+    <?php if ($success_msg): ?> <div class="alert alert-success">✅ <?= $success_msg ?></div> <?php endif; ?>
+    <?php if ($error_msg): ?> <div class="alert alert-danger">❌ <?= $error_msg ?></div> <?php endif; ?>
 
-<?php if ($msg): ?>
-    <div class="msg <?= h($msg_type) ?>"><?= h($msg) ?></div>
-<?php endif; ?>
+    <form method="POST" action="edit_user.php?id=<?= $target_user_id ?>">
+        <input type="hidden" name="csrf_token" value="<?= generate_csrf_token() ?>">
 
-<div class="edit-container">
-    
-    <div class="edit-panel" style="flex: 1.5;">
-        <div class="panel-header">📝 ข้อมูลทั่วไป (Profile)</div>
-        <form method="post" autocomplete="off">
-            <input type="hidden" name="csrf_token" value="<?= h($csrf) ?>">
-            <input type="hidden" name="action" value="update_info">
+        <div class="flex-row">
+            <div class="form-group">
+                <label class="form-label">ชื่อผู้ใช้งาน (แก้ไขไม่ได้)</label>
+                <input type="text" class="form-control" value="<?= htmlspecialchars($user_data['username']) ?>" disabled style="background:#e2e8f0; cursor:not-allowed;">
+            </div>
+            <div class="form-group">
+                <label class="form-label">เปลี่ยนรหัสผ่าน (ปล่อยว่างถ้าไม่ต้องการเปลี่ยน)</label>
+                <input type="password" name="password" class="form-control" placeholder="รหัสผ่านใหม่...">
+            </div>
+        </div>
 
-            <label>Username (ไม่สามารถแก้ไขได้)</label>
-            <input type="text" value="<?= h($user_data['username']) ?>" disabled style="background: #f1f5f9; color: #94a3b8; cursor: not-allowed; width: 100%; padding: 12px; border: 1px solid #cbd5e1; border-radius: 8px; margin-bottom: 15px; box-sizing: border-box;">
+        <div class="flex-row">
+            <div class="form-group">
+                <label class="form-label">ชื่อ-นามสกุล (Display Name) <span style="color:red">*</span></label>
+                <input type="text" name="display_name" class="form-control" value="<?= htmlspecialchars($user_data['display_name']) ?>" required>
+            </div>
+            <div class="form-group">
+                <label class="form-label">บทบาท (Role) <span style="color:red">*</span></label>
+                <select name="role" id="roleSelect" class="form-select" onchange="toggleClassSelection()" required>
+                    <option value="student" <?= $user_data['role']==='student'?'selected':'' ?>>นักเรียน (Student)</option>
+                    <option value="teacher" <?= $user_data['role']==='teacher'?'selected':'' ?>>ครูผู้สอน (Teacher)</option>
+                    <option value="parent" <?= $user_data['role']==='parent'?'selected':'' ?>>ผู้ปกครอง (Parent)</option>
+                    <option value="developer" <?= $user_data['role']==='developer'?'selected':'' ?>>ผู้พัฒนา (Developer)</option>
+                </select>
+            </div>
+        </div>
 
-            <label for="display_name">ชื่อ-นามสกุล ที่แสดงบนระบบ</label>
-            <input type="text" id="display_name" name="display_name" value="<?= h($user_data['display_name']) ?>" required style="width: 100%; padding: 12px; border: 1px solid #cbd5e1; border-radius: 8px; margin-bottom: 15px; box-sizing: border-box;">
-
-            <div style="display: flex; gap: 15px; margin-bottom: 15px;">
-                <div style="flex: 1;">
-                    <label for="role">บทบาท (Role)</label>
-                    <select id="role" name="role" required onchange="toggleClassField()" style="width: 100%; padding: 12px; border-radius: 10px; border: 1px solid #cbd5e1; outline: none;">
-                        <option value="student" <?= $user_data['role'] === 'student' ? 'selected' : '' ?>>👨‍🎓 นักเรียน (Student)</option>
-                        <option value="teacher" <?= $user_data['role'] === 'teacher' ? 'selected' : '' ?>>👨‍🏫 ครูผู้สอน (Teacher)</option>
-                        <option value="parent" <?= $user_data['role'] === 'parent' ? 'selected' : '' ?>>👨‍👩‍👦 ผู้ปกครอง (Parent)</option>
-                        <option value="developer" <?= $user_data['role'] === 'developer' ? 'selected' : '' ?>>💻 นักพัฒนา (Developer)</option>
+        <div class="class-selection-block" id="classSelectionBlock">
+            <h4 style="margin-top:0; color:#1e3a8a;">🏫 สังกัดห้องเรียน</h4>
+            <div class="flex-row">
+                <div class="form-group" style="margin-bottom:0;">
+                    <label class="form-label">ระดับชั้น</label>
+                    <select id="levelSelect" class="form-select" onchange="loadRooms(null)">
+                        <option value="">-- เลือกระดับชั้น --</option>
                     </select>
                 </div>
-
-                <div style="flex: 1;" id="class_container">
-                    <label for="class_id">ระดับชั้น (ถ้ามี)</label>
-                    <select id="class_id" name="class_id" style="width: 100%; padding: 12px; border-radius: 10px; border: 1px solid #cbd5e1; outline: none;">
-                        <option value="0">-- ไม่ระบุชั้นเรียน --</option>
-                        <?php foreach ($grouped_classes as $lvl => $rooms): ?>
-                            <optgroup label="📚 ระดับชั้น <?= h($lvl) ?>">
-                                <?php foreach ($rooms as $c): ?>
-                                    <option value="<?= h($c['id']) ?>" <?= $user_data['class_id'] == $c['id'] ? 'selected' : '' ?>>
-                                        <?= h($c['class_name']) ?>
-                                    </option>
-                                <?php endforeach; ?>
-                            </optgroup>
-                        <?php endforeach; ?>
+                <div class="form-group" style="margin-bottom:0;">
+                    <label class="form-label">ห้องเรียน</label>
+                    <select name="class_id" id="roomSelect" class="form-select" disabled>
+                        <option value="">-- กรุณาเลือกระดับชั้นก่อน --</option>
                     </select>
                 </div>
             </div>
-
-            <p style="font-size: 0.9em; color: #64748b;">วันที่ลงทะเบียน: <?= date('d/m/Y H:i', strtotime($user_data['created_at'])) ?></p>
-
-            <button type="submit" class="btn-primary" style="width: 100%; background: #3b82f6;">💾 บันทึกการเปลี่ยนแปลง</button>
-        </form>
-    </div>
-
-    <div style="flex: 1; display: flex; flex-direction: column; gap: 20px;">
-        <div class="edit-panel">
-            <div class="panel-header" style="border-bottom-color: #f59e0b; color: #b45309;">🔑 รีเซ็ตรหัสผ่าน</div>
-            <?php if ($new_password_show !== ""): ?>
-                <div class="password-display">
-                    <p style="margin: 0; color: #b45309; font-weight: bold;">รหัสผ่านใหม่คือ</p>
-                    <div class="pwd"><?= h($new_password_show) ?></div>
-                </div>
-            <?php else: ?>
-                <form method="post" onsubmit="return confirm('⚠️ ยืนยันการรีเซ็ตรหัสผ่าน?');">
-                    <input type="hidden" name="csrf_token" value="<?= h($csrf) ?>">
-                    <input type="hidden" name="action" value="reset_password">
-                    <button type="submit" class="btn-primary" style="width: 100%; background: #f59e0b; color: #fff;">🔄 สุ่มรหัสใหม่</button>
-                </form>
-            <?php endif; ?>
         </div>
 
-        <div class="edit-panel">
-            <div class="panel-header" style="border-bottom-color: #ef4444; color: #b91c1c;">🛑 สถานะบัญชี</div>
-            <div style="margin-bottom: 20px; font-size: 1.1rem;">
-                สถานะปัจจุบัน: 
-                <?= $user_data['is_deleted'] == 0 ? '<span class="status-badge status-active">✅ ใช้งานปกติ</span>' : '<span class="status-badge status-suspended">🚫 ถูกระงับ</span>' ?>
-            </div>
-            <form method="post">
-                <input type="hidden" name="csrf_token" value="<?= h($csrf) ?>">
-                <input type="hidden" name="action" value="toggle_status">
-                <?php if ($user_data['is_deleted'] == 0): ?>
-                    <input type="hidden" name="new_status" value="1">
-                    <button type="submit" class="btn-primary" style="width: 100%; background: #ef4444;" onclick="return confirm('ยืนยันการระงับบัญชี?');">🚫 ระงับบัญชี</button>
-                <?php else: ?>
-                    <input type="hidden" name="new_status" value="0">
-                    <button type="submit" class="btn-primary" style="width: 100%; background: #10b981;" onclick="return confirm('ยืนยันการกู้คืนบัญชี?');">🔓 กู้คืนบัญชี</button>
-                <?php endif; ?>
-            </form>
-        </div>
-    </div>
+        <button type="submit" class="btn-submit">💾 บันทึกการเปลี่ยนแปลง</button>
+    </form>
 </div>
 
 <script>
-    function toggleClassField() {
-        const role = document.getElementById('role').value;
-        const classBox = document.getElementById('class_container');
-        if (role === 'student' || role === 'teacher') {
-            classBox.style.opacity = '1';
-            classBox.style.pointerEvents = 'auto';
+    const savedLevel = "<?= $user_data['current_level'] ?? '' ?>";
+    const savedClassId = "<?= $user_data['class_id'] ?? '' ?>";
+
+    document.addEventListener('DOMContentLoaded', () => {
+        toggleClassSelection(); // เช็ค Role ตอนโหลดหน้าทันที
+    });
+
+    function toggleClassSelection() {
+        const role = document.getElementById('roleSelect').value;
+        const block = document.getElementById('classSelectionBlock');
+        const roomSelect = document.getElementById('roomSelect');
+        
+        if (role === 'student') {
+            block.style.display = 'block';
+            loadLevels(savedLevel); // โหลดและพยายาม Pre-select
         } else {
-            classBox.style.opacity = '0.4';
-            classBox.style.pointerEvents = 'none';
-            document.getElementById('class_id').value = "0";
+            block.style.display = 'none';
+            roomSelect.value = ''; 
         }
     }
-    document.addEventListener("DOMContentLoaded", toggleClassField);
+
+    async function loadLevels(preselectLevel = null) {
+        const levelSelect = document.getElementById('levelSelect');
+        if(levelSelect.options.length > 1) return; // ถ้าโหลดแล้วไม่ต้องซ้ำ
+
+        try {
+            const response = await fetch('api_classes.php?action=get_levels');
+            const result = await response.json();
+            
+            if (result.status === 'success') {
+                let options = '<option value="">-- เลือกระดับชั้น --</option>';
+                result.data.forEach(level => {
+                    const isSelected = (level === preselectLevel) ? 'selected' : '';
+                    options += `<option value="${level}" ${isSelected}>${level}</option>`;
+                });
+                levelSelect.innerHTML = options;
+
+                // ถ้ามีการ Pre-select ไว้ ให้วิ่งไปดึงข้อมูลห้องต่อเลย
+                if(preselectLevel) {
+                    loadRooms(savedClassId);
+                }
+            }
+        } catch (error) {
+            console.error('Error loading levels:', error);
+        }
+    }
+
+    async function loadRooms(preselectRoomId = null) {
+        const level = document.getElementById('levelSelect').value;
+        const roomSelect = document.getElementById('roomSelect');
+        
+        if (!level) {
+            roomSelect.innerHTML = '<option value="">-- กรุณาเลือกระดับชั้นก่อน --</option>';
+            roomSelect.disabled = true;
+            return;
+        }
+
+        roomSelect.innerHTML = '<option value="">⏳ กำลังโหลด...</option>';
+        roomSelect.disabled = true;
+
+        try {
+            const response = await fetch(`api_classes.php?action=get_rooms&level=${encodeURIComponent(level)}`);
+            const result = await response.json();
+            
+            if (result.status === 'success') {
+                let options = '<option value="">-- เลือกห้องเรียน --</option>';
+                result.data.forEach(room => {
+                    const isSelected = (parseInt(room.class_id) === parseInt(preselectRoomId)) ? 'selected' : '';
+                    options += `<option value="${room.class_id}" ${isSelected}>${room.class_name}</option>`;
+                });
+                roomSelect.innerHTML = options;
+                roomSelect.disabled = false;
+            }
+        } catch (error) {
+            roomSelect.innerHTML = '<option value="">❌ โหลดไม่สำเร็จ</option>';
+        }
+    }
 </script>
 
 <?php require_once 'footer.php'; ?>
