@@ -1,5 +1,5 @@
 <?php
-// api_student_quest.php - API สำหรับจัดการเควสของฝั่งนักเรียน
+// api_student_quest.php - API สำหรับจัดการเควสของฝั่งนักเรียน (Hotfix Applied)
 header('Content-Type: application/json; charset=utf-8');
 require_once 'config.php';
 require_once 'db.php';
@@ -28,7 +28,8 @@ $action = $data['action'] ?? ($_GET['action'] ?? '');
 
 switch ($action) {
     case 'get_available_quests':
-        // ดึงเควสที่ is_active = 1 และตรงกับห้องเรียนของนักเรียน (หรือเควสที่ให้ทำทุกคนเป้าหมายเป็น NULL)
+        // ดึงเควสที่ is_active = 1 และตรงกับห้องเรียนของนักเรียน
+        // HOTFIX: เพิ่มเงื่อนไข q.target_chem1 IS NOT NULL เพื่อป้องกันระบบ Javascript พังเมื่อเจอเควสขยะ
         $sql = "
             SELECT q.*, 
                    c1.name as chem1_name, c1.formula as chem1_formula, c1.state as chem1_state,
@@ -39,6 +40,7 @@ switch ($action) {
             LEFT JOIN chemicals c2 ON q.target_chem2 = c2.id
             LEFT JOIN student_quests sq ON q.id = sq.quest_id AND sq.student_id = ?
             WHERE q.is_active = 1 
+            AND q.target_chem1 IS NOT NULL
             AND (q.target_class_id IS NULL OR q.target_class_id = ?)
             ORDER BY q.created_at DESC
         ";

@@ -1,6 +1,6 @@
 <?php
 /**
- * lab_realistic.php - ห้องทดลองเคมีเสมือนจริง (Ultimate Full Version - Phase 7 Environment & Lighting)
+ * lab_realistic.php - ห้องทดลองเคมีเสมือนจริง (Ultimate Full Version - Phase 4 Analytical Upgrade)
  * ระบบบริหารจัดการห้องเรียน โรงเรียนบ้านคาวิทยา
  */
 
@@ -66,61 +66,44 @@ require_once 'header.php';
     .btn-toggle-right { left: -40px; border-radius: 10px 0 0 10px; background: #8b5cf6; }
 
     /* ============================================================
-       🛠️ PHYSICS ALIGNMENT & PHASE 7 ENVIRONMENT
+       🛠️ PHYSICS ALIGNMENT & ENVIRONMENT
        ============================================================ */
     .workbench-wrapper { flex: 1; height: 100%; position: relative; overflow-x: auto; overflow-y: hidden; background: radial-gradient(circle at center, #1e293b 0%, #020617 100%); scrollbar-width: thin; }
     .workbench-inner { min-width: 1200px; width: 100%; height: 100%; position: relative; margin: 0; }
     
-    /* Phase 7: Ambient Lighting */
     .ambient-lighting { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1; transition: background 1s, opacity 1s; opacity: 0; background: radial-gradient(circle at 50% 80%, rgba(251, 146, 60, 0.15) 0%, transparent 50%); }
     .heating-active .ambient-lighting { opacity: 1; }
 
-    /* โต๊ะทดลอง (Phase 6.5 Anchor System) */
     .desk-surface { position: absolute; bottom: 0; left: 0; width: 100%; height: 25vh; min-height: 180px; background: linear-gradient(to bottom, #1e293b 0%, #020617 100%); border-top: 6px solid #475569; z-index: 1; transition: box-shadow 1s; }
     .heating-active .desk-surface { box-shadow: inset 0 60px 100px -20px rgba(249, 115, 22, 0.1); }
     
     .desk-anchor { position: absolute; bottom: calc(25vh - 30px); left: 50%; width: 0; height: 0; z-index: 10; pointer-events: none; }
     .desk-anchor > * { pointer-events: auto; position: absolute; }
 
-    /* Phase 7: Fume Hood Vent Graphic */
     .fume-hood-vent { position: absolute; top: -400px; right: -200px; width: 200px; height: 50px; background: #0f172a; border: 3px solid #334155; border-radius: 8px; z-index: 5; display: flex; gap: 8px; padding: 8px; box-shadow: 0 20px 40px rgba(0,0,0,0.8); opacity: 0.5; transition: 0.3s; transform: perspective(500px) rotateX(-20deg); }
     .fume-hood-vent.active { opacity: 1; border-color: #38bdf8; box-shadow: 0 20px 40px rgba(56, 189, 248, 0.2), inset 0 0 20px rgba(56, 189, 248, 0.2); }
     .vent-slit { flex: 1; background: #020617; border-radius: 3px; box-shadow: inset 0 5px 10px #000; }
 
-    /* 1. ฐานตะเกียง */
     .heater-base { bottom: 0px; left: -130px; width: 260px; height: 40px; background: #334155; border-radius: 8px; border: 2px solid #1e293b; box-shadow: 0 12px 20px rgba(0,0,0,0.8); z-index: 10; }
-    
-    /* 2. เปลวไฟ */
     .flame-container { bottom: 40px; left: -40px; width: 80px; height: 60px; display: none; justify-content: center; align-items: flex-end; z-index: 12; pointer-events: none;}
     .flame { width: 50px; height: 50px; background: radial-gradient(circle at center, #fbbf24 0%, #ef4444 60%, transparent 100%); border-radius: 50% 50% 20% 20%; animation: flicker 0.1s infinite alternate; opacity: 0.9; filter: blur(3px); box-shadow: 0 -15px 30px rgba(239, 68, 68, 0.6); }
     @keyframes flicker { 0% { transform: scale(1) translateY(0); } 100% { transform: scale(1.2) translateY(-10px); } }
 
-    /* 3. บีกเกอร์หลัก */
     .main-beaker { bottom: 40px; left: -100px; width: 200px; height: 240px; border: 4px solid rgba(255,255,255,0.7); border-top: none; border-radius: 0 0 30px 30px; background: rgba(255,255,255,0.08); display: flex; align-items: flex-end; overflow: hidden; box-shadow: inset 0 -15px 40px rgba(0,0,0,0.5); z-index: 20; transition: border-color 0.3s, transform 0.3s, box-shadow 1s; cursor: pointer; }
     .main-beaker:hover { border-color: #38bdf8; box-shadow: 0 0 20px rgba(56, 189, 248, 0.4), inset 0 -15px 40px rgba(0,0,0,0.5); }
     .main-beaker.drag-over { border-color: #4ade80; background: rgba(74, 222, 128, 0.2); transform: scale(1.05); } 
-    .heating-active .main-beaker { box-shadow: inset 0 -15px 40px rgba(0,0,0,0.5), 0 15px 40px rgba(249, 115, 22, 0.4); border-bottom-color: rgba(251, 146, 60, 0.8); } /* Phase 7 Light */
+    .heating-active .main-beaker { box-shadow: inset 0 -15px 40px rgba(0,0,0,0.5), 0 15px 40px rgba(249, 115, 22, 0.4); border-bottom-color: rgba(251, 146, 60, 0.8); }
     
-    /* ของเหลวและเอฟเฟกต์ในบีกเกอร์ */
     .liquid-canvas { position: absolute; bottom: 0; left: 0; width: 100%; height: 100%; z-index: 2; border-radius: 0 0 25px 25px; pointer-events: none; }
     .residue-layer { width: 100%; height: 0px; background: repeating-linear-gradient(45deg, #475569, #475569 5px, #334155 5px, #334155 10px); position: absolute; bottom: 0; left: 0; z-index: 3; transition: 0.8s; opacity: 0; border-radius: 0 0 25px 25px; pointer-events: none; }
     
-    /* Phase 7: Wipable Frost Effect */
-    .beaker-frost { 
-        position: absolute; top:0; left:0; width: 100%; height: 100%; 
-        background: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" opacity="0.4"><path d="M10,10 L20,20 M80,80 L90,90 M20,80 L30,70" stroke="white" stroke-width="2"/></svg>'); 
-        background-size: 40px 40px; opacity: 0; transition: opacity 1.5s; z-index: 25; pointer-events: none; 
-        -webkit-mask-image: radial-gradient(circle at var(--wipe-x, -100px) var(--wipe-y, -100px), transparent var(--wipe-size, 0px), black calc(var(--wipe-size, 0px) + 30px));
-        mask-image: radial-gradient(circle at var(--wipe-x, -100px) var(--wipe-y, -100px), transparent var(--wipe-size, 0px), black calc(var(--wipe-size, 0px) + 30px));
-    }
+    .beaker-frost { position: absolute; top:0; left:0; width: 100%; height: 100%; background: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" opacity="0.4"><path d="M10,10 L20,20 M80,80 L90,90 M20,80 L30,70" stroke="white" stroke-width="2"/></svg>'); background-size: 40px 40px; opacity: 0; transition: opacity 1.5s; z-index: 25; pointer-events: none; -webkit-mask-image: radial-gradient(circle at var(--wipe-x, -100px) var(--wipe-y, -100px), transparent var(--wipe-size, 0px), black calc(var(--wipe-size, 0px) + 30px)); mask-image: radial-gradient(circle at var(--wipe-x, -100px) var(--wipe-y, -100px), transparent var(--wipe-size, 0px), black calc(var(--wipe-size, 0px) + 30px)); }
     .beaker-frost.active { opacity: 1; filter: drop-shadow(0 0 10px rgba(255,255,255,0.5)); }
 
-    /* แท่งแก้วคนสาร */
     .stirring-rod { position: absolute; top: -120px; left: 45%; width: 10px; height: 350px; background: linear-gradient(to right, rgba(255,255,255,0.9), rgba(255,255,255,0.4)); border-radius: 10px; z-index: 30; display: none; transform-origin: top center; box-shadow: 2px 0 10px rgba(0,0,0,0.3); }
     .stirring-anim { display: block; animation: stirAction 0.6s infinite linear; }
     @keyframes stirAction { 0% { transform: rotate(-12deg) translateX(-25px); } 50% { transform: rotate(12deg) translateX(25px); } 100% { transform: rotate(-12deg) translateX(-25px); } }
 
-    /* 🌡️ Visual Sensors */
     .visual-thermometer { bottom: 40px; left: -140px; width: 16px; height: 200px; background: rgba(255,255,255,0.1); border: 2px solid rgba(255,255,255,0.5); border-radius: 10px; z-index: 15; display: flex; flex-direction: column; justify-content: flex-end; padding: 2px; }
     .thermo-mercury { width: 100%; height: 15%; background: linear-gradient(to top, #ef4444, #f87171); border-radius: 8px; transition: height 0.5s; }
     .thermo-bulb { position: absolute; bottom: -15px; left: -6px; width: 24px; height: 24px; background: #ef4444; border-radius: 50%; border: 2px solid rgba(255,255,255,0.5); box-shadow: 0 0 10px rgba(239,68,68,0.5); }
@@ -128,18 +111,39 @@ require_once 'header.php';
     .visual-ph-strip { bottom: 40px; left: 120px; width: 20px; height: 150px; background: #fef08a; border: 1px solid #ca8a04; border-radius: 2px; z-index: 15; overflow: hidden; display: flex; flex-direction: column; justify-content: flex-end; box-shadow: 2px 5px 10px rgba(0,0,0,0.3); }
     .ph-color-indicator { width: 100%; height: 30%; background: #22c55e; transition: background 1s, height 1s; opacity: 0.9; }
 
-    /* 4. ตาชั่งดิจิตอล */
     .digital-scale { bottom: -20px; left: -400px; width: 220px; height: 140px; background: #94a3b8; border-radius: 12px; border: 3px solid #64748b; box-shadow: 0 15px 25px rgba(0,0,0,0.8); display: flex; flex-direction: column; align-items: center; z-index: 15; cursor: pointer; }
     .scale-plate { width: 160px; height: 18px; background: #cbd5e1; border-radius: 50%; border: 2px solid #64748b; margin: -10px 0 15px 0; position: relative; z-index: 2; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
     .scale-display { background: #020617; color: #22c55e; font-family: 'Share Tech Mono', monospace; font-size: 1.8rem; padding: 5px 15px; border-radius: 8px; width: 85%; text-align: right; margin-bottom: 12px; box-shadow: inset 0 0 15px #000; border: 1px solid #334155; box-sizing: border-box; }
     
-    /* 5. กระบอกตวง */
     .cylinder-container { bottom: -20px; left: 240px; width: 60px; height: 220px; border: 4px solid rgba(255,255,255,0.5); border-top: none; border-radius: 0 0 30px 30px; background: rgba(255,255,255,0.05); display: flex; align-items: flex-end; overflow: hidden; z-index: 15; }
     .cylinder-liquid { width: 100%; height: 0%; transition: 0.8s cubic-bezier(0.4, 0, 0.2, 1); }
 
-    /* 6. คราบสารหก */
     .spill-area { bottom: -40px; left: -150px; width: 300px; height: 60px; background: transparent; border-radius: 50%; z-index: 5; opacity: 0; filter: blur(10px); transition: 0.5s; pointer-events: none; }
     .btn-clean-spill { bottom: -20px; left: -100px; width: 200px; z-index: 50; background: #eab308; color: #1e293b; padding: 12px; border: none; border-radius: 10px; font-weight: bold; cursor: pointer; display: none; }
+
+    /* บิวเรตต์ (Phase 3) */
+    .burette-container { position: absolute; bottom: 300px; left: -15px; width: 30px; height: 400px; border: 2px solid rgba(255,255,255,0.8); border-radius: 5px; border-top: none; background: rgba(255,255,255,0.1); display: flex; align-items: flex-end; z-index: 35; overflow: hidden; box-shadow: inset 0 0 10px rgba(0,0,0,0.2); transition: 0.3s; }
+    .burette-container.drag-over { border-color: #f59e0b; background: rgba(245, 158, 11, 0.2); transform: scale(1.05); box-shadow: 0 0 20px rgba(245, 158, 11, 0.5); }
+    .burette-liquid { width: 100%; height: 0%; transition: height 0.2s linear; }
+    .burette-markings { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: repeating-linear-gradient(to bottom, transparent, transparent 19px, rgba(255,255,255,0.5) 19px, rgba(255,255,255,0.5) 20px); pointer-events: none; }
+    .burette-valve-body { position: absolute; bottom: 270px; left: -25px; width: 50px; height: 20px; background: #94a3b8; border-radius: 4px; z-index: 36; border: 2px solid #475569; display: flex; align-items: center; justify-content: center; cursor: pointer; box-shadow: 0 5px 10px rgba(0,0,0,0.5); }
+    .burette-valve-knob { width: 10px; height: 30px; background: #ef4444; border-radius: 2px; transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); transform: rotate(0deg); }
+    .burette-valve-body.open .burette-valve-knob { transform: rotate(90deg); background: #22c55e; }
+    .burette-tip { position: absolute; bottom: 250px; left: -5px; width: 10px; height: 20px; background: rgba(255,255,255,0.5); border-radius: 0 0 5px 5px; z-index: 34; border: 1px solid rgba(255,255,255,0.8); border-top: none; }
+    .burette-label { position: absolute; bottom: 710px; left: -80px; width: 160px; text-align: center; color: #cbd5e1; font-size: 0.85rem; background: rgba(15,23,42,0.8); padding: 5px; border-radius: 5px; border: 1px solid #334155; }
+    
+    .drop-particle { position: absolute; width: 6px; height: 10px; border-radius: 50% 50% 40% 40%; z-index: 45; opacity: 0.8; animation: fallingDrop 0.4s linear forwards; }
+    @keyframes fallingDrop { 0% { transform: translateY(0) scale(1); opacity: 0.8; } 100% { transform: translateY(220px) scale(0.5); opacity: 0; } }
+
+    /* นาฬิกาจับเวลา (Phase 3) */
+    .stopwatch-widget { position: absolute; top: 120px; right: 25px; width: 220px; background: rgba(15, 23, 42, 0.95); border: 2px solid #3b82f6; border-radius: 12px; z-index: 500; box-shadow: 0 10px 30px rgba(0,0,0,0.8); overflow: hidden; backdrop-filter: blur(10px); display: none; }
+    .sw-drag-handle { background: #1e293b; padding: 8px; color: #94a3b8; font-size: 0.85rem; text-align: center; cursor: move; border-bottom: 1px solid #334155; display: flex; justify-content: space-between; align-items: center; }
+    .sw-display { font-family: 'Share Tech Mono', monospace; font-size: 2.2rem; color: #38bdf8; text-align: center; padding: 15px 0; text-shadow: 0 0 10px rgba(56, 189, 248, 0.5); background: #020617; }
+    .sw-controls { display: flex; border-top: 1px solid #334155; }
+    .sw-btn { flex: 1; padding: 10px; border: none; background: #1e293b; color: white; cursor: pointer; font-weight: bold; transition: 0.2s; font-family: 'Itim'; border-right: 1px solid #334155; }
+    .sw-btn:last-child { border-right: none; }
+    .sw-btn:hover { background: #334155; }
+    .sw-btn.start { color: #4ade80; } .sw-btn.stop { color: #f87171; } .sw-btn.reset { color: #fbbf24; }
 
     /* ============================================================
        📍 UI COMPONENTS (Sensors, Inventory, Logs)
@@ -155,7 +159,6 @@ require_once 'header.php';
     .search-box input { width: 100%; padding: 12px; border-radius: 8px; border: 1px solid #475569; background: #0f172a; color: white; margin-bottom: 10px; box-sizing: border-box; }
     .chem-list { display: flex; flex-direction: column; gap: 8px; margin-top: 15px; }
     
-    /* Draggable items */
     .chem-item { background: #0f172a; padding: 12px; border-radius: 10px; cursor: grab; border: 1px solid #334155; display: flex; align-items: center; gap: 15px; transition: 0.2s; }
     .chem-item:hover { border-color: #38bdf8; transform: translateX(5px); background: #1e293b; }
     .chem-item:active { cursor: grabbing; transform: scale(0.95); }
@@ -172,9 +175,15 @@ require_once 'header.php';
     .btn-mix:disabled { opacity: 0.5; cursor: not-allowed; filter: grayscale(1); }
 
     /* Modals & Tools */
-    .tool-controls { position: fixed; z-index: 2000; background: rgba(15, 23, 42, 0.98); padding: 0 0 20px 0; border-radius: 15px; border: 2px solid #38bdf8; display: none; width: 300px; box-shadow: 0 20px 50px rgba(0,0,0,0.9); }
-    .drag-handle { padding: 12px; background: rgba(56, 189, 248, 0.2); border-radius: 13px 13px 0 0; cursor: move; border-bottom: 1px solid #334155; text-align: center; }
-    .btn-transfer { background: #10b981; color: white; border: none; padding: 12px; border-radius: 8px; width: 100%; font-weight: bold; margin-top: 15px; cursor: pointer; }
+    .tool-controls { position: fixed; z-index: 2000; background: rgba(15, 23, 42, 0.98); padding: 0 0 20px 0; border-radius: 15px; border: 2px solid #38bdf8; display: none; width: 320px; box-shadow: 0 20px 50px rgba(0,0,0,0.9); }
+    .drag-handle { padding: 12px; background: rgba(56, 189, 248, 0.2); border-radius: 13px 13px 0 0; cursor: move; border-bottom: 1px solid #334155; text-align: center; display: flex; justify-content: space-between; align-items: center;}
+    
+    .precise-input-group { display: flex; gap: 10px; margin-bottom: 15px; background: #020617; padding: 10px; border-radius: 8px; border: 1px solid #334155;}
+    .precise-input-group input { flex: 1; background: transparent; border: none; color: #38bdf8; font-family: 'Share Tech Mono'; font-size: 1.5rem; outline: none; text-align: right; width: 100%;}
+    .precise-input-group span { color: #64748b; align-self: center; font-weight: bold; font-size: 1.2rem;}
+
+    .btn-transfer { background: #10b981; color: white; border: none; padding: 12px; border-radius: 8px; width: 100%; font-weight: bold; margin-top: 5px; cursor: pointer; transition: 0.2s;}
+    .btn-transfer:hover { background: #059669; }
 
     /* Quest System */
     .btn-quest-board { background: linear-gradient(135deg, #f59e0b, #d97706); color: white; border: none; padding: 8px 18px; border-radius: 8px; font-weight: bold; cursor: pointer; font-family: 'Itim'; font-size: 1rem; box-shadow: 0 4px 10px rgba(245, 158, 11, 0.4); display: flex; align-items: center; gap: 8px; transition: 0.3s; }
@@ -188,7 +197,6 @@ require_once 'header.php';
     .quest-card:hover { border-color: #f59e0b; background: #172033; transform: translateX(5px); }
     .qc-info h3 { margin: 0 0 5px 0; color: #fff; font-size: 1.2rem; }
     .qc-info p { margin: 0; color: #94a3b8; font-size: 0.95rem; }
-    .qc-badge { background: rgba(245, 158, 11, 0.2); color: #fbbf24; padding: 4px 10px; border-radius: 6px; font-size: 0.8rem; font-family: 'Share Tech Mono'; margin-top: 10px; display: inline-block; }
     .btn-accept-quest { background: #10b981; color: white; border: none; padding: 10px 20px; border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 1rem; }
     
     .quest-hud { position: absolute; top: 25px; left: 340px; width: 280px; background: rgba(15, 23, 42, 0.85); border: 2px solid #f59e0b; border-radius: 12px; padding: 15px; z-index: 300; box-shadow: 0 10px 30px rgba(0,0,0,0.6); backdrop-filter: blur(8px); display: none; transition: 0.4s; }
@@ -207,6 +215,20 @@ require_once 'header.php';
     .btn-submit-quest { background: linear-gradient(135deg, #22c55e, #16a34a); color: white; border: none; width: 100%; padding: 12px; border-radius: 8px; margin-top: 15px; font-weight: bold; cursor: pointer; font-family: 'Itim'; font-size: 1.1rem; box-shadow: 0 4px 15px rgba(34, 197, 94, 0.4); display: none; animation: pulseBtn 1.5s infinite; }
     @keyframes pulseBtn { 0% { transform: scale(1); } 50% { transform: scale(1.05); } 100% { transform: scale(1); } }
     
+    /* 📄 Phase 4: Report Form Modal */
+    .modal-report { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(2, 6, 23, 0.95); z-index: 4500; display: none; align-items: center; justify-content: center; backdrop-filter: blur(10px); }
+    .report-box { background: #0f172a; border: 2px solid #38bdf8; border-radius: 20px; padding: 30px; width: 90%; max-width: 550px; box-shadow: 0 0 50px rgba(56, 189, 248, 0.3); transform: translateY(-20px); opacity: 0; transition: 0.4s; display: flex; flex-direction: column; }
+    .report-box.show { transform: translateY(0); opacity: 1; }
+    .report-box h2 { color: white; margin-top: 0; border-bottom: 1px dashed #334155; padding-bottom: 15px; display: flex; align-items: center; gap: 10px; }
+    .report-label { color: #94a3b8; font-weight: bold; margin: 15px 0 8px 0; display: block; font-size: 1rem; }
+    .report-textarea { width: 100%; height: 120px; background: #1e293b; border: 1px solid #475569; color: #f8fafc; padding: 15px; border-radius: 10px; font-family: 'Itim', sans-serif; resize: none; box-sizing: border-box; outline: none; }
+    .report-textarea:focus { border-color: #38bdf8; box-shadow: inset 0 0 10px rgba(56,189,248,0.2); }
+    .report-input { width: 100%; background: #1e293b; border: 1px solid #475569; color: #4ade80; padding: 15px; border-radius: 10px; font-family: 'Share Tech Mono', monospace; font-size: 1.5rem; text-align: right; box-sizing: border-box; outline: none; }
+    .report-input:focus { border-color: #4ade80; box-shadow: inset 0 0 10px rgba(74,222,128,0.2); }
+    .btn-group-report { display: flex; gap: 15px; margin-top: 25px; }
+    .btn-report-cancel { flex: 1; background: #334155; color: white; border: none; padding: 12px; border-radius: 10px; cursor: pointer; font-weight: bold; }
+    .btn-report-confirm { flex: 2; background: linear-gradient(135deg, #10b981, #059669); color: white; border: none; padding: 12px; border-radius: 10px; cursor: pointer; font-weight: bold; font-size: 1.1rem; box-shadow: 0 5px 15px rgba(16, 185, 129, 0.4); }
+
     /* Victory Modal Phase 4 */
     .modal-victory { position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(2, 6, 23, 0.95); z-index: 5000; display: none; flex-direction: column; align-items: center; justify-content: center; backdrop-filter: blur(10px); }
     .victory-box { background: #0f172a; border: 2px solid #38bdf8; border-radius: 20px; padding: 40px; text-align: center; max-width: 500px; box-shadow: 0 0 50px rgba(56, 189, 248, 0.3); transform: scale(0.8); opacity: 0; transition: 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
@@ -220,7 +242,7 @@ require_once 'header.php';
         <span style="font-size: 1.8rem;">🧪</span> 
         <div>
             <div style="font-weight: 800;">Virtual Chemistry Lab</div>
-            <div style="font-size: 0.7rem; color: #64748b; font-family: 'Orbitron';">Powered by Bankha System v2.6.5 [Phase 7: Environment & FX]</div>
+            <div style="font-size: 0.7rem; color: #64748b; font-family: 'Orbitron';">Powered by Bankha System v2.6.5 [Phase 4: Analytical Evaluation]</div>
         </div>
     </div>
     
@@ -247,7 +269,7 @@ require_once 'header.php';
                     <input type="text" id="chemSearch" placeholder="🔍 ค้นหาสารเคมี..." onkeyup="filterInventory()">
                 </div>
 
-                <h4 style="color:#94a3b8; margin-top:20px; font-size:0.9rem;">🧊 สถานะของแข็ง (ลากเพื่อใช้งาน)</h4>
+                <h4 style="color:#94a3b8; margin-top:20px; font-size:0.9rem;">🧊 สถานะของแข็ง (ลากลงบีกเกอร์)</h4>
                 <div class="chem-list" id="solidList">
                     <?php foreach ($solids as $s): ?>
                         <div class="chem-item" draggable="true" ondragstart="dragChem(event, <?= $s['id'] ?>, '<?= h($s['name']) ?>', 'solid', '<?= $s['color_neutral'] ?>')" onclick="prepareChemical(<?= $s['id'] ?>, '<?= h($s['name']) ?>', 'solid', '<?= $s['color_neutral'] ?>')">
@@ -260,7 +282,7 @@ require_once 'header.php';
                     <?php endforeach; ?>
                 </div>
 
-                <h4 style="color:#94a3b8; margin-top:20px; font-size:0.9rem;">💧 สถานะของเหลว (ลากเพื่อใช้งาน)</h4>
+                <h4 style="color:#94a3b8; margin-top:20px; font-size:0.9rem;">💧 สถานะของเหลว (ลากลงบีกเกอร์ หรือ บิวเรตต์)</h4>
                 <div class="chem-list" id="liquidList">
                     <?php foreach ($liquids as $l): ?>
                         <div class="chem-item" draggable="true" ondragstart="dragChem(event, <?= $l['id'] ?>, '<?= h($l['name']) ?>', 'liquid', '<?= $l['color_neutral'] ?>')" onclick="prepareChemical(<?= $l['id'] ?>, '<?= h($l['name']) ?>', 'liquid', '<?= $l['color_neutral'] ?>')">
@@ -278,7 +300,8 @@ require_once 'header.php';
     </div>
 
     <div class="workbench-wrapper" id="workbenchScroll">
-        <div class="ambient-lighting" id="ambientLight"></div> <div class="workbench-inner">
+        <div class="ambient-lighting" id="ambientLight"></div> 
+        <div class="workbench-inner">
             <canvas id="fxCanvas" style="position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none; z-index:40;"></canvas>
             
             <div class="quest-hud" id="questHUD">
@@ -287,8 +310,21 @@ require_once 'header.php';
                     <div class="qh-reward" id="hudReward">XP: 0</div>
                 </div>
                 <ul class="qh-checklist" id="hudChecklist"></ul>
-                <button class="btn-submit-quest" id="btnSubmitQuest" onclick="submitQuestReport()">🚀 ส่งผลการทดลอง!</button>
-                <button class="btn-abandon" onclick="abandonQuest()" style="background:none; border:1px solid #ef4444; color:#ef4444; width:100%; padding:8px; border-radius:6px; margin-top:10px;">ยกเลิกภารกิจ</button>
+                <button class="btn-submit-quest" id="btnSubmitQuest" onclick="openReportModal()">🚀 เขียนสรุปผลการทดลอง!</button>
+                <button class="btn-abandon" onclick="abandonQuest()" style="background:none; border:1px solid #ef4444; color:#ef4444; width:100%; padding:8px; border-radius:6px; margin-top:10px; cursor:pointer;">ยกเลิกภารกิจ</button>
+            </div>
+
+            <div class="stopwatch-widget" id="stopwatchWidget">
+                <div class="sw-drag-handle" id="swHandle">
+                    <span>⏱️ นาฬิกาจับเวลา</span>
+                    <button onclick="document.getElementById('stopwatchWidget').style.display='none'" style="background:none; border:none; color:#ef4444; cursor:pointer;">✕</button>
+                </div>
+                <div class="sw-display" id="swDisplay">00:00.00</div>
+                <div class="sw-controls">
+                    <button class="sw-btn start" onclick="startStopwatch()">Start</button>
+                    <button class="sw-btn stop" onclick="stopStopwatch()">Stop</button>
+                    <button class="sw-btn reset" onclick="resetStopwatch()">Reset</button>
+                </div>
             </div>
 
             <div class="sensor-panel">
@@ -318,6 +354,16 @@ require_once 'header.php';
                     <div class="scale-display" id="scaleDisplay">0.00 g</div>
                     <button onclick="event.stopPropagation(); tareScale();" style="background:#475569; color:white; border:none; padding:5px 15px; border-radius:5px; cursor:pointer; font-weight:bold; font-size: 0.8rem;">TARE</button>
                 </div>
+
+                <div class="burette-label" id="buretteLabel">Burette 50 mL<br><span id="buretteVolTxt" style="color:#4ade80;">Empty</span></div>
+                <div class="burette-container" id="buretteObj" ondragover="allowDropBurette(event)" ondragleave="leaveDropBurette(event)" ondrop="dropChemBurette(event)">
+                    <div class="burette-markings"></div>
+                    <div class="burette-liquid" id="buretteFill"></div>
+                </div>
+                <div class="burette-valve-body" id="buretteValve" onclick="toggleBuretteValve()">
+                    <div class="burette-valve-knob" id="buretteKnob"></div>
+                </div>
+                <div class="burette-tip"></div>
 
                 <div class="main-beaker" id="beakerObj" ondragover="allowDrop(event)" ondragleave="leaveDrop(event)" ondrop="dropChem(event)" onclick="playAudio('glassClink')">
                     <div class="beaker-frost" id="beakerFrost"></div>
@@ -351,7 +397,12 @@ require_once 'header.php';
                     <button class="btn-mix" id="btnStir" onclick="toggleStir()" style="background:#334155; font-size:1rem;">🥄 คนสาร</button>
                 </div>
 
-                <button class="btn-mix" id="btnFan" onclick="toggleFan()" style="background:#334155; font-size:1rem; margin-bottom:15px;">💨 เปิดพัดลมดูดควัน</button> <div style="background:rgba(239, 68, 68, 0.1); border:1px dashed #ef4444; padding:15px; border-radius:10px; margin-bottom:15px;">
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:15px;">
+                    <button class="btn-mix" onclick="document.getElementById('stopwatchWidget').style.display='block'" style="background:#0284c7; font-size:1rem;">⏱️ จับเวลา</button>
+                    <button class="btn-mix" id="btnFan" onclick="toggleFan()" style="background:#334155; font-size:1rem;">💨 ดูดควัน</button> 
+                </div>
+
+                <div style="background:rgba(239, 68, 68, 0.1); border:1px dashed #ef4444; padding:15px; border-radius:10px; margin-bottom:15px;">
                     <label style="display:flex; align-items: center; gap: 10px; margin-bottom:10px; color:#fca5a5; cursor:pointer;">
                         <input type="checkbox" id="chkGoggles" style="width: 18px; height: 18px;" onchange="audio.play('click'); updateQuestHUD();"> 🥽 สวมแว่นตานิรภัย
                     </label>
@@ -361,7 +412,7 @@ require_once 'header.php';
                 </div>
 
                 <div class="log-zone" id="labLog">
-                    <div class="log-entry"><span class="log-time"><?= date('H:i') ?></span> ระบบแสงและสภาพแวดล้อมทำงาน (Phase 7)</div>
+                    <div class="log-entry"><span class="log-time"><?= date('H:i') ?></span> ระบบประเมินผลคำนวณ (Phase 4) พร้อมใช้งาน</div>
                 </div>
 
                 <button class="btn-mix" id="btnProcess" onclick="mixChemicals()" disabled style="background: linear-gradient(135deg, #8b5cf6, #7c3aed);">⚗️ ประมวลผลปฏิกิริยา</button>
@@ -372,24 +423,22 @@ require_once 'header.php';
 </div>
 
 <div class="tool-controls" id="toolBox">
-    <div class="drag-handle" id="toolHandle"><span id="toolTitle" style="color:#38bdf8; font-weight:bold;">เลือกปริมาณสาร</span></div>
+    <div class="drag-handle" id="toolHandle">
+        <span id="toolTitle" style="color:#38bdf8; font-weight:bold;">ระบุปริมาณสาร</span>
+        <button onclick="closeTool()" style="background:none; border:none; color:#cbd5e1; cursor:pointer;">✕</button>
+    </div>
     <div style="padding:20px;">
-        <div id="solidUI" style="display:none;">
-            <div style="display:flex; gap:10px; margin-bottom:15px;">
-                <button onclick="changeAmt(1)" style="flex:1; padding:10px; border-radius:8px; background:#0f172a; color:white; cursor:pointer;">+1 g</button>
-                <button onclick="changeAmt(5)" style="flex:1; padding:10px; border-radius:8px; background:#0f172a; color:white; cursor:pointer;">+5 g</button>
-                <button onclick="changeAmt(10)" style="flex:1; padding:10px; border-radius:8px; background:#0f172a; color:white; cursor:pointer;">+10 g</button>
-            </div>
+        <div class="precise-input-group">
+            <input type="number" id="preciseAmtInput" step="0.1" min="0" value="0.0" onchange="syncAmountInput()">
+            <span id="toolUnitTxt">ml</span>
         </div>
-        <div id="liquidUI" style="display:none;">
-            <div style="display:flex; gap:10px; margin-bottom:15px;">
-                <button onclick="changeAmt(5)" style="flex:1; padding:10px; border-radius:8px; background:#0f172a; color:white; cursor:pointer;">+5 ml</button>
-                <button onclick="changeAmt(10)" style="flex:1; padding:10px; border-radius:8px; background:#0f172a; color:white; cursor:pointer;">+10 ml</button>
-                <button onclick="changeAmt(50)" style="flex:1; padding:10px; border-radius:8px; background:#0f172a; color:white; cursor:pointer;">+50 ml</button>
-            </div>
+        
+        <div style="display:flex; gap:10px; margin-bottom:15px;" id="quickBtnGroup">
+            <button onclick="changeAmt(1)" class="sw-btn" style="border-radius:6px;">+1</button>
+            <button onclick="changeAmt(5)" class="sw-btn" style="border-radius:6px;">+5</button>
+            <button onclick="changeAmt(10)" class="sw-btn" style="border-radius:6px;">+10</button>
         </div>
         <button class="btn-transfer" onclick="pourToBeaker()">⬇️ ถ่ายลงบีกเกอร์</button>
-        <button onclick="closeTool()" style="width:100%; background:none; border:none; color:#64748b; margin-top:15px; cursor:pointer;">ยกเลิก</button>
     </div>
 </div>
 
@@ -403,10 +452,31 @@ require_once 'header.php';
     </div>
 </div>
 
+<div class="modal-report" id="reportModal">
+    <div class="report-box" id="reportBox">
+        <h2>📝 สรุปผลการทดลอง</h2>
+        
+        <span class="report-label">สรุปผลการสังเกตที่ได้จากห้องปฏิบัติการ:</span>
+        <textarea class="report-textarea" id="studentConclusion" placeholder="ตัวอย่าง: เมื่อหยด NaOH ลงในกรดแอซีติกพร้อมอินดิเคเตอร์ สารละลายเปลี่ยนจากไม่มีสีเป็นสีชมพูอ่อนที่จุดยุติ..."></textarea>
+        
+        <span class="report-label" style="color: #4ade80; margin-top: 20px;">🧮 ผลการคำนวณ (เฉพาะแล็บไทเทรต/ปริมาณสาร)</span>
+        <div style="display:flex; align-items:center; gap:15px;">
+            <input type="number" class="report-input" id="studentCalcAnswer" step="0.001" placeholder="0.000">
+            <span style="color:#64748b; font-weight:bold; font-size:1.2rem;">Molar (M)</span>
+        </div>
+        <p style="font-size:0.8rem; color:#64748b; margin-top:8px;">* หากภารกิจนี้ไม่มีการคำนวณหาความเข้มข้น ให้ปล่อยว่างไว้หรือใส่ 0</p>
+
+        <div class="btn-group-report">
+            <button class="btn-report-cancel" onclick="closeReportModal()">ย้อนกลับไปแก้ไข</button>
+            <button class="btn-report-confirm" id="btnConfirmSubmit" onclick="confirmSubmitReport()">📤 ยืนยันการส่งรายงาน</button>
+        </div>
+    </div>
+</div>
+
 <div class="modal-victory" id="victoryModal">
     <div class="victory-box" id="victoryBox">
         <h2 style="color:white; font-size:2rem; margin-top:0;">🎉 ภารกิจสำเร็จ! 🎉</h2>
-        <p style="color:#94a3b8; font-size:1.1rem;">บันทึกรายงานการทดลองและส่งให้ครูผู้สอนเรียบร้อยแล้ว</p>
+        <p style="color:#94a3b8; font-size:1.1rem; margin-bottom: 5px;" id="victoryEvalMsg">บันทึกรายงานการทดลองและส่งให้ครูผู้สอนเรียบร้อยแล้ว</p>
         <div class="grade-stamp grade-A" id="finalGrade">A</div>
         <div style="background:#1e293b; padding:15px; border-radius:10px; margin-bottom:20px;">
             <div style="color:#38bdf8; font-size:1.5rem; font-family:'Share Tech Mono';">ได้รับ XP: +<span id="finalXP">0</span></div>
@@ -419,7 +489,7 @@ require_once 'header.php';
 
 <script>
     /* ============================================================
-       🎧 PHASE 5: THE AUDIO ENGINE
+       🎧 AUDIO ENGINE
        ============================================================ */
     class AudioManager {
         constructor() {
@@ -459,6 +529,7 @@ require_once 'header.php';
                 case 'pourSolid': const sNoise = this.ctx.createBufferSource(); sNoise.buffer = this.createNoiseBuffer(1.5); const sFilter = this.ctx.createBiquadFilter(); sFilter.type = 'bandpass'; sFilter.frequency.value = 3000; gain.gain.setValueAtTime(0, t); gain.gain.linearRampToValueAtTime(0.5, t + 0.1); gain.gain.linearRampToValueAtTime(0, t + 0.8); sNoise.connect(sFilter); sFilter.connect(gain); gain.connect(this.masterGain); sNoise.start(t); break;
                 case 'explosion': const eNoise = this.ctx.createBufferSource(); eNoise.buffer = this.createNoiseBuffer(3); const eFilter = this.ctx.createBiquadFilter(); eFilter.type = 'lowpass'; eFilter.frequency.value = 1000; gain.gain.setValueAtTime(1.0, t); gain.gain.exponentialRampToValueAtTime(0.01, t + 2.5); eNoise.connect(eFilter); eFilter.connect(gain); gain.connect(this.masterGain); eNoise.start(t); break;
                 case 'wipe': const wNoise = this.ctx.createBufferSource(); wNoise.buffer = this.createNoiseBuffer(0.5); const wFilter = this.ctx.createBiquadFilter(); wFilter.type = 'bandpass'; wFilter.frequency.value = 2000; gain.gain.setValueAtTime(0, t); gain.gain.linearRampToValueAtTime(0.3, t+0.1); gain.gain.linearRampToValueAtTime(0, t+0.4); wNoise.connect(wFilter); wFilter.connect(gain); gain.connect(this.masterGain); wNoise.start(t); break;
+                case 'drop': osc.type='sine'; osc.frequency.setValueAtTime(1200, t); osc.frequency.exponentialRampToValueAtTime(2000, t+0.05); gain.gain.setValueAtTime(0.2, t); gain.gain.exponentialRampToValueAtTime(0.01, t+0.1); osc.start(t); osc.stop(t+0.1); break;
             }
         }
         startLoop(type) {
@@ -478,7 +549,7 @@ require_once 'header.php';
     function toggleGlobalAudio() { const btn = document.getElementById('btnToggleAudio'); if (audio.toggleMute()) { btn.innerHTML = '🔊 ระบบเสียง'; btn.classList.remove('muted'); audio.play('click'); } else { btn.innerHTML = '🔇 ปิดเสียง'; btn.classList.add('muted'); } }
 
     /* ============================================================
-       🌊 PHASE 6: LIQUID CANVAS PHYSICS ENGINE 
+       🌊 LIQUID PHYSICS ENGINE 
        ============================================================ */
     function hexToRgb(hex) {
         let result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
@@ -575,7 +646,6 @@ require_once 'header.php';
             this.ctx.stroke();
         }
     }
-    
     const liquidSim = new LiquidPhysics();
 
     /* ============================================================
@@ -585,9 +655,8 @@ require_once 'header.php';
     let currentTool = { id:0, name:'', state:'', color:'', amt:0 }, isHeating = false, isStirring = false, isSpilled = false;
     let activeQuest = null, questSpillCount = 0, unwashedResidues = [];
     let logHistory = [];
-    let isFanOn = false; // Phase 7: Fan state
+    let isFanOn = false;
 
-    // Particle Engine
     const fxCanvas = document.getElementById('fxCanvas');
     const fxCtx = fxCanvas.getContext('2d');
     let particles = [];
@@ -601,11 +670,8 @@ require_once 'header.php';
             this.size = Math.random() * 8 + 2;
         }
         update() { 
-            // Phase 7: Wind from Fume Hood
             if (isFanOn && (this.type === 'gas' || this.type === 'steam')) {
-                this.vx += 0.08; // Blow to the right
-                this.vy -= 0.05; // Suck upwards
-                this.life -= 0.015; // Dissipate faster
+                this.vx += 0.08; this.vy -= 0.05; this.life -= 0.015;
             }
             this.x += this.vx; this.y += this.vy; this.life -= 0.012; 
         }
@@ -624,42 +690,104 @@ require_once 'header.php';
         for(let i=0; i<count; i++) particles.push(new Particle(spawnX, spawnY, type));
     }
 
+    let swInterval = null;
+    let swStartTime = 0;
+    let swElapsed = 0;
+    let swRunning = false;
+
+    function formatTime(ms) {
+        let date = new Date(ms);
+        let m = date.getUTCMinutes().toString().padStart(2, '0');
+        let s = date.getUTCSeconds().toString().padStart(2, '0');
+        let msPart = Math.floor(date.getUTCMilliseconds() / 10).toString().padStart(2, '0');
+        return `${m}:${s}.${msPart}`;
+    }
+    function updateStopwatch() { const now = Date.now(); const diff = now - swStartTime + swElapsed; document.getElementById('swDisplay').innerText = formatTime(diff); }
+    function startStopwatch() { if(swRunning) return; audio.play('click'); swStartTime = Date.now(); swInterval = setInterval(updateStopwatch, 10); swRunning = true; }
+    function stopStopwatch() { if(!swRunning) return; audio.play('click'); clearInterval(swInterval); swElapsed += Date.now() - swStartTime; swRunning = false; }
+    function resetStopwatch() { audio.play('click'); clearInterval(swInterval); swElapsed = 0; swRunning = false; document.getElementById('swDisplay').innerText = "00:00.00"; }
+
+    let burette = { chem: null, maxVol: 50.0, currentVol: 0.0, valveOpen: false, dripInterval: null };
+
+    function updateBuretteUI() {
+        let pct = (burette.currentVol / burette.maxVol) * 100;
+        document.getElementById('buretteFill').style.height = pct + '%';
+        if(burette.chem) {
+            document.getElementById('buretteFill').style.backgroundColor = burette.chem.color;
+            document.getElementById('buretteVolTxt').innerText = burette.currentVol.toFixed(1) + " mL";
+            document.getElementById('buretteLabel').innerHTML = `Burette 50 mL<br><strong style="color:${burette.chem.color}">${burette.chem.name}</strong><br><span style="color:#4ade80;">${burette.currentVol.toFixed(1)} mL</span>`;
+        } else {
+            document.getElementById('buretteVolTxt').innerText = "Empty";
+            document.getElementById('buretteLabel').innerHTML = `Burette 50 mL<br><span style="color:#ef4444;">Empty</span>`;
+        }
+    }
+
+    function toggleBuretteValve() {
+        if(!burette.chem || burette.currentVol <= 0) { audio.play('error'); addLog("⚠️ บิวเรตต์ว่างเปล่า ไม่สามารถเปิดวาล์วได้"); return; }
+        audio.play('click'); burette.valveOpen = !burette.valveOpen; const vBody = document.getElementById('buretteValve');
+        if(burette.valveOpen) {
+            vBody.classList.add('open');
+            burette.dripInterval = setInterval(buretteDrip, 200); 
+            addLog("เปิดวาล์วบิวเรตต์...");
+        } else {
+            vBody.classList.remove('open'); clearInterval(burette.dripInterval); addLog("ปิดวาล์วบิวเรตต์");
+            if(totalVol > 0) processReactionSilent();
+        }
+    }
+
+    function buretteDrip() {
+        if(burette.currentVol <= 0) { toggleBuretteValve(); return; }
+        let dropAmt = 0.5; burette.currentVol -= dropAmt; totalVol += dropAmt;
+        let existing = beakerItems.find(i => i.id === burette.chem.id);
+        if(existing) existing.amt += dropAmt; else beakerItems.push({ id: burette.chem.id, name: burette.chem.name, state: 'liquid', color: burette.chem.color, amt: dropAmt });
+        
+        updateBuretteUI(); audio.play('drop'); liquidSim.splash(Math.floor(liquidSim.numSprings / 2) - 5, 20); liquidSim.setColor(burette.chem.color);
+        createDropAnimation(burette.chem.color);
+        if(totalVol > 100) triggerSpill(burette.chem.color);
+        document.getElementById('btnProcess').disabled = false;
+        if(totalVol > 5) document.getElementById('stirRod').style.display = 'block';
+        if(Math.floor(burette.currentVol * 2) % 10 === 0) processReactionSilent();
+    }
+
+    function createDropAnimation(color) {
+        const anchor = document.getElementById('labAnchor'); const drop = document.createElement('div'); drop.className = 'drop-particle'; drop.style.backgroundColor = color; drop.style.bottom = '230px'; drop.style.left = '-1px'; anchor.appendChild(drop);
+        setTimeout(() => drop.remove(), 400);
+    }
+
+    function processReactionSilent() {
+        fetch('api_process_lab.php', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'mix', chemicals: beakerItems, environment: { temp: temp, stirring: isStirring }, safety: { goggles: document.getElementById('chkGoggles').checked, gloves: document.getElementById('chkGloves').checked }, residue: unwashedResidues, csrf_token: document.getElementById('csrf').value }) })
+        .then(res => res.json()).then(data => {
+            if(!data.is_explosion) {
+                ph = data.ph_result; document.getElementById('valPh').innerText = ph.toFixed(2);
+                let phHue = (14 - ph) * 20; document.getElementById('phStripBar').style.backgroundColor = `hsl(${phHue}, 100%, 40%)`;
+                liquidSim.setColor(data.color);
+            }
+        });
+    }
+
     function animateMain() {
         fxCtx.clearRect(0, 0, fxCanvas.width, fxCanvas.height);
         particles = particles.filter(p => p.life > 0);
         particles.forEach(p => { p.update(); p.draw(); });
-        
-        if(totalVol > 0 && temp > 95) {
-            if(Math.random() > 0.6) createParticles('steam', 1);
-            if(Math.random() > 0.9) audio.play('pourLiquid'); 
-        }
-        
-        liquidSim.update();
-        liquidSim.draw();
-
-        requestAnimationFrame(animateMain);
+        if(totalVol > 0 && temp > 95) { if(Math.random() > 0.6) createParticles('steam', 1); if(Math.random() > 0.9) audio.play('pourLiquid'); }
+        liquidSim.update(); liquidSim.draw(); requestAnimationFrame(animateMain);
     }
 
-    // Phase 7: Frost Wiper Logic
     let wipeSize = 0;
     document.getElementById('beakerObj').addEventListener('mousemove', (e) => {
-        if(temp < 15 && e.buttons === 1) { // Left click and drag
+        if(temp < 15 && e.buttons === 1) { 
             const rect = document.getElementById('beakerObj').getBoundingClientRect();
-            let wipeX = e.clientX - rect.left;
-            let wipeY = e.clientY - rect.top;
             wipeSize = 50;
-            document.getElementById('beakerFrost').style.setProperty('--wipe-x', wipeX + 'px');
-            document.getElementById('beakerFrost').style.setProperty('--wipe-y', wipeY + 'px');
+            document.getElementById('beakerFrost').style.setProperty('--wipe-x', (e.clientX - rect.left) + 'px');
+            document.getElementById('beakerFrost').style.setProperty('--wipe-y', (e.clientY - rect.top) + 'px');
             document.getElementById('beakerFrost').style.setProperty('--wipe-size', wipeSize + 'px');
             if(Math.random() > 0.8) audio.play('wipe'); 
         }
     });
 
-    // Temp & Sensor Loop
     setInterval(() => {
         if(isHeating) targetTemp = Math.min(180, targetTemp + 1.2); 
         else { if (targetTemp > 25) targetTemp -= 0.3; else if (targetTemp < 25) targetTemp += 0.2; }
-
         if(temp < targetTemp) temp = Math.min(targetTemp, temp + 0.5);
         if(temp > targetTemp) temp = Math.max(targetTemp, temp - 0.5);
 
@@ -669,37 +797,19 @@ require_once 'header.php';
         else tempUI.classList.remove('hot', 'cold');
         tempUI.innerText = temp.toFixed(1) + " °C";
 
-        // Visual Thermometer Update
-        let thermoHeight = Math.max(5, Math.min(100, (temp / 150) * 100)); 
-        document.getElementById('thermoBar').style.height = thermoHeight + "%";
+        document.getElementById('thermoBar').style.height = Math.max(5, Math.min(100, (temp / 150) * 100)) + "%";
 
-        // Phase 7: Frost Management
         if(temp < 15) {
             document.getElementById('beakerFrost').classList.add('active');
-            if(wipeSize > 0) wipeSize -= 0.5; // Frost creeps back slowly
+            if(wipeSize > 0) wipeSize -= 0.5;
             document.getElementById('beakerFrost').style.setProperty('--wipe-size', wipeSize + 'px');
-        } else {
-            document.getElementById('beakerFrost').classList.remove('active');
-        }
+        } else { document.getElementById('beakerFrost').classList.remove('active'); }
 
-        // Boiling evaporation
-        if(temp > 100 && totalVol > 0) {
-            totalVol -= 0.5;
-            if(totalVol <= 0) { addLog("⚠️ น้ำระเหยจนแห้ง!"); totalVol = 0; }
-        }
-
+        if(temp > 100 && totalVol > 0) { totalVol -= 0.5; if(totalVol <= 0) { addLog("⚠️ น้ำระเหยจนแห้ง!"); totalVol = 0; } }
         if(activeQuest) updateQuestHUD();
     }, 1000);
 
-    /* ============================================================
-       🖱️ DRAG AND DROP SYSTEM
-       ============================================================ */
-    function dragChem(ev, id, name, state, color) {
-        ev.dataTransfer.setData("id", id);
-        ev.dataTransfer.setData("name", name);
-        ev.dataTransfer.setData("state", state);
-        ev.dataTransfer.setData("color", color);
-    }
+    function dragChem(ev, id, name, state, color) { ev.dataTransfer.setData("id", id); ev.dataTransfer.setData("name", name); ev.dataTransfer.setData("state", state); ev.dataTransfer.setData("color", color); }
     function allowDrop(ev) { ev.preventDefault(); document.getElementById('beakerObj').classList.add('drag-over'); }
     function leaveDrop(ev) { document.getElementById('beakerObj').classList.remove('drag-over'); }
     function dropChem(ev) {
@@ -708,9 +818,15 @@ require_once 'header.php';
         if (id) prepareChemical(id, ev.dataTransfer.getData("name"), ev.dataTransfer.getData("state"), ev.dataTransfer.getData("color"));
     }
 
-    /* ============================================================
-       📍 UI & INTERACTION LOGIC
-       ============================================================ */
+    function allowDropBurette(ev) { ev.preventDefault(); document.getElementById('buretteObj').classList.add('drag-over'); }
+    function leaveDropBurette(ev) { document.getElementById('buretteObj').classList.remove('drag-over'); }
+    function dropChemBurette(ev) {
+        ev.preventDefault(); document.getElementById('buretteObj').classList.remove('drag-over');
+        if(ev.dataTransfer.getData("state") === 'solid') { audio.play('error'); alert("⚠️ ไม่สามารถใส่ของแข็งลงในบิวเรตต์ได้ กรุณาใช้ของเหลวเท่านั้น"); return; }
+        const id = ev.dataTransfer.getData("id");
+        if (id) { audio.play('pourLiquid'); burette.chem = { id, name: ev.dataTransfer.getData("name"), color: ev.dataTransfer.getData("color") }; burette.currentVol = 50.0; updateBuretteUI(); addLog(`เติม ${burette.chem.name} ลงในบิวเรตต์`); }
+    }
+
     function togglePanel(id) { audio.play('click'); const p = document.getElementById('panel'+id.substring(5)); p.classList.toggle('collapsed'); setTimeout(initCanvas, 400); }
     function addLog(msg) { const t = new Date().toLocaleTimeString('th-TH'); document.getElementById('labLog').innerHTML += `<div class="log-entry"><span class="log-time">[${t}]</span> ${msg}</div>`; document.getElementById('labLog').scrollTop = document.getElementById('labLog').scrollHeight; logHistory.push(`[${t}] ${msg.replace(/<[^>]*>?/gm, '')}`); }
     function updateHP(val, reason) { hp = Math.max(0, Math.min(100, hp + val)); document.getElementById('hpValueTxt').innerText = hp + "%"; document.getElementById('hpBarFill').style.width = hp + "%"; if(val < 0) { document.getElementById('hpContainer').classList.add('hp-shake'); setTimeout(()=>document.getElementById('hpContainer').classList.remove('hp-shake'), 400); addLog(`<span style="color:#ef4444;">🚨 บาดเจ็บ: ${reason}</span>`); } if(hp <= 0) { audio.play('explosion'); alert("☠️ GAME OVER: " + reason); location.reload(); } }
@@ -719,33 +835,38 @@ require_once 'header.php';
     function prepareChemical(id, name, state, color) {
         audio.play('click');
         if(isSpilled) { audio.play('error'); return alert("⚠️ ทำความสะอาดสารหกก่อน!"); }
-        currentTool = { id, name, state, color, amt: 0 };
+        currentTool = { id, name, state, color, amt: 0.0 };
         document.getElementById('toolBox').style.display = 'block'; document.getElementById('toolBox').style.left = "340px"; document.getElementById('toolBox').style.top = "100px";
-        document.getElementById('toolTitle').innerText = name;
-        document.getElementById('solidUI').style.display = state === 'solid' ? 'block' : 'none';
-        document.getElementById('liquidUI').style.display = state === 'liquid' ? 'block' : 'none';
-        document.getElementById('scaleDisplay').innerText = "0.00 g"; document.getElementById('scalePowder').style.width = "0"; document.getElementById('cylinderFill').style.height = "0";
+        document.getElementById('toolTitle').innerText = name; document.getElementById('toolUnitTxt').innerText = state === 'solid' ? "g" : "ml";
+        document.getElementById('preciseAmtInput').value = "0.0"; document.getElementById('scaleDisplay').innerText = "0.00 g"; document.getElementById('scalePowder').style.width = "0"; document.getElementById('cylinderFill').style.height = "0";
+    }
+
+    function syncAmountInput() {
+        let val = parseFloat(document.getElementById('preciseAmtInput').value);
+        if(isNaN(val) || val < 0) val = 0;
+        currentTool.amt = val; updateToolVisuals();
     }
 
     function changeAmt(val) {
-        audio.play('click'); currentTool.amt += val;
+        audio.play('click'); currentTool.amt += val; document.getElementById('preciseAmtInput').value = currentTool.amt.toFixed(1); updateToolVisuals();
+    }
+
+    function updateToolVisuals() {
         if(currentTool.state === 'solid') { document.getElementById('scaleDisplay').innerText = currentTool.amt.toFixed(2) + " g"; document.getElementById('scalePowder').style.width = Math.min(100, currentTool.amt * 2) + "%"; document.getElementById('scalePowder').style.backgroundColor = currentTool.color;
         } else { document.getElementById('cylinderFill').style.height = Math.min(100, currentTool.amt) + "%"; document.getElementById('cylinderFill').style.backgroundColor = currentTool.color; }
     }
 
     function pourToBeaker() {
-        if(currentTool.amt <= 0) { audio.play('error'); return alert("ระบุปริมาณก่อน!"); }
+        if(currentTool.amt <= 0) { audio.play('error'); return alert("กรุณาระบุปริมาณสารให้ถูกต้อง!"); }
         if (currentTool.state === 'solid') audio.play('pourSolid'); else audio.play('pourLiquid');
 
-        beakerItems.push({...currentTool}); totalVol += currentTool.amt;
-        if(totalVol > 100) { triggerSpill(currentTool.color); } 
+        let existing = beakerItems.find(i => i.id === currentTool.id);
+        if(existing) existing.amt += currentTool.amt; else beakerItems.push({...currentTool}); 
         
-        liquidSim.splash(Math.floor(Math.random() * liquidSim.numSprings), 50); 
-        liquidSim.setColor(currentTool.color);
-        
-        addLog(`เท ${currentTool.name} (${currentTool.amt} ${currentTool.state === 'solid' ? 'g':'ml'})`);
-        closeTool(); createParticles('pour', 15);
-        document.getElementById('btnProcess').disabled = false;
+        totalVol += currentTool.amt; if(totalVol > 100) { triggerSpill(currentTool.color); } 
+        liquidSim.splash(Math.floor(Math.random() * liquidSim.numSprings), 50); liquidSim.setColor(currentTool.color);
+        addLog(`ตวง ${currentTool.name} (${currentTool.amt} ${currentTool.state === 'solid' ? 'g':'ml'}) ลงบีกเกอร์`);
+        closeTool(); createParticles('pour', 15); document.getElementById('btnProcess').disabled = false;
         if(totalVol > 5) document.getElementById('stirRod').style.display = 'block';
         updateQuestHUD();
     }
@@ -753,59 +874,18 @@ require_once 'header.php';
     function triggerSpill(color) { isSpilled = true; questSpillCount++; audio.play('error'); document.getElementById('spillEffect').style.opacity = "1"; document.getElementById('spillEffect').style.backgroundColor = color; document.getElementById('btnClean').style.display = "block"; updateHP(-15, "สารเคมีหก!"); updateQuestHUD(); }
     function cleanSpill() { audio.play('wipe'); isSpilled = false; document.getElementById('spillEffect').style.opacity = "0"; document.getElementById('btnClean').style.display = "none"; addLog("เช็ดคราบสำเร็จ"); }
 
-    function toggleHeater() {
-        audio.play('click'); isHeating = !isHeating; const btn = document.getElementById('btnHeater');
-        btn.style.background = isHeating ? "#ef4444" : "#334155"; btn.innerText = isHeating ? "🔥 ปิดตะเกียง" : "🔥 ต้มสาร";
-        document.getElementById('flameFire').style.display = isHeating ? "flex" : "none";
-        
-        // Phase 7: Toggle Ambient Light Class
-        if (isHeating) {
-            document.body.classList.add('heating-active');
-            audio.startLoop('fire'); 
-        } else {
-            document.body.classList.remove('heating-active');
-            audio.stopLoop('fire'); 
-        }
-    }
-
-    function toggleStir() {
-        audio.play('click'); isStirring = !isStirring; const btn = document.getElementById('btnStir');
-        btn.style.background = isStirring ? "#3b82f6" : "#334155";
-        liquidSim.isStirring = isStirring; 
-        if(isStirring) { document.getElementById('stirRod').classList.add('stirring-anim'); audio.startLoop('stir');
-        } else { document.getElementById('stirRod').classList.remove('stirring-anim'); audio.stopLoop('stir'); }
-        updateQuestHUD();
-    }
-
-    // Phase 7: Fume Hood Controller
-    function toggleFan() {
-        audio.play('click');
-        isFanOn = !isFanOn;
-        const btn = document.getElementById('btnFan');
-        const vent = document.getElementById('fumeHoodVent');
-        btn.style.background = isFanOn ? "#38bdf8" : "#334155";
-        btn.innerText = isFanOn ? "💨 ปิดพัดลมดูดควัน" : "💨 เปิดพัดลมดูดควัน";
-        
-        if(isFanOn) {
-            audio.startLoop('fan');
-            vent.classList.add('active');
-            addLog("เปิดระบบดูดควันทำงาน");
-        } else {
-            audio.stopLoop('fan');
-            vent.classList.remove('active');
-            addLog("ปิดระบบดูดควัน");
-        }
-    }
-
+    function toggleHeater() { audio.play('click'); isHeating = !isHeating; const btn = document.getElementById('btnHeater'); btn.style.background = isHeating ? "#ef4444" : "#334155"; btn.innerText = isHeating ? "🔥 ปิดตะเกียง" : "🔥 ต้มสาร"; document.getElementById('flameFire').style.display = isHeating ? "flex" : "none"; if (isHeating) { document.body.classList.add('heating-active'); audio.startLoop('fire'); } else { document.body.classList.remove('heating-active'); audio.stopLoop('fire'); } }
+    function toggleStir() { audio.play('click'); isStirring = !isStirring; const btn = document.getElementById('btnStir'); btn.style.background = isStirring ? "#3b82f6" : "#334155"; liquidSim.isStirring = isStirring; if(isStirring) { document.getElementById('stirRod').classList.add('stirring-anim'); audio.startLoop('stir'); } else { document.getElementById('stirRod').classList.remove('stirring-anim'); audio.stopLoop('stir'); } updateQuestHUD(); }
+    function toggleFan() { audio.play('click'); isFanOn = !isFanOn; const btn = document.getElementById('btnFan'); const vent = document.getElementById('fumeHoodVent'); btn.style.background = isFanOn ? "#38bdf8" : "#334155"; if(isFanOn) { audio.startLoop('fan'); vent.classList.add('active'); addLog("เปิดระบบดูดควันทำงาน"); } else { audio.stopLoop('fan'); vent.classList.remove('active'); addLog("ปิดระบบดูดควัน"); } }
     function closeTool() { audio.play('click'); document.getElementById('toolBox').style.display = 'none'; }
-    function tareScale() { audio.play('click'); document.getElementById('scaleDisplay').innerText = "0.00 g"; document.getElementById('scalePowder').style.width = "0"; }
+    function tareScale() { audio.play('click'); document.getElementById('scaleDisplay').innerText = "0.00 g"; document.getElementById('scalePowder').style.width = "0"; document.getElementById('preciseAmtInput').value = "0"; currentTool.amt = 0; }
 
     /* ============================================================
-       📍 QUEST & REPORT LOGIC (Phase 4)
+       📍 QUEST & REPORT LOGIC (PHASE 4)
        ============================================================ */
     function openQuestBoard() { audio.play('click'); document.getElementById('questBoardModal').style.display = 'flex'; fetch('api_student_quest.php', { method: 'POST', body: JSON.stringify({ action: 'get_available_quests', csrf_token: document.getElementById('csrf').value }) }).then(r => r.json()).then(res => { let html = ''; res.data.forEach(q => { html += `<div class="quest-card"><div><h3>${q.title}</h3><p>${q.description}</p></div><button class="btn-accept-quest" onclick='startQuest(${JSON.stringify(q)})'>รับภารกิจ</button></div>`; }); document.getElementById('questListBody').innerHTML = html; }); }
     function closeQuestBoard() { audio.play('click'); document.getElementById('questBoardModal').style.display = 'none'; }
-    function startQuest(q) { audio.play('victory'); activeQuest = q; questSpillCount = 0; washBeaker(true, true); closeQuestBoard(); document.getElementById('questHUD').style.display = 'block'; document.getElementById('hudTitle').innerText = q.title; addLog(`เริ่มภารกิจ: ${q.title}`); updateQuestHUD(); }
+    function startQuest(q) { audio.play('victory'); activeQuest = q; questSpillCount = 0; washBeaker(true, true); closeQuestBoard(); document.getElementById('questHUD').style.display = 'block'; document.getElementById('hudTitle').innerText = q.title; document.getElementById('hudReward').innerText = `XP: ${q.reward_points}`; addLog(`เริ่มภารกิจ: ${q.title}`); updateQuestHUD(); }
     function abandonQuest() { audio.play('error'); activeQuest = null; document.getElementById('questHUD').style.display = 'none'; addLog("ยกเลิกภารกิจ"); }
     
     function updateQuestHUD() {
@@ -815,9 +895,10 @@ require_once 'header.php';
 
         const c1ID = parseInt(activeQuest.target_chem1); let hasC1 = beakerSummary[c1ID] !== undefined; let c1Status = hasC1 ? 'done' : 'pending';
         if (activeQuest.strict_amount == 1 && activeQuest.amount_chem1 > 0 && hasC1) { let diff = Math.abs(activeQuest.amount_chem1 - beakerSummary[c1ID]) / activeQuest.amount_chem1; c1Status = (diff <= 0.05) ? 'done' : 'failed'; }
-        if(c1Status !== 'done') allDone = false; html += `<li class="qh-item ${c1Status}">✔️ ใส่ ${activeQuest.chem1_name}</li>`;
+        if(c1Status !== 'done') allDone = false; html += `<li class="qh-item ${c1Status}">✔️ ตวง ${activeQuest.chem1_name}</li>`;
 
         if (activeQuest.safety_goggles == 1) { if(!document.getElementById('chkGoggles').checked) { c1Status = 'failed'; allDone = false; } else c1Status = 'done'; html += `<li class="qh-item ${c1Status}">✔️ แว่นตานิรภัย</li>`; }
+        if (activeQuest.safety_gloves == 1) { if(!document.getElementById('chkGloves').checked) { c1Status = 'failed'; allDone = false; } else c1Status = 'done'; html += `<li class="qh-item ${c1Status}">✔️ ถุงมือยาง</li>`; }
         
         cl.innerHTML = html; document.getElementById('btnSubmitQuest').style.display = (allDone && beakerItems.length > 0) ? 'block' : 'none';
     }
@@ -829,63 +910,89 @@ require_once 'header.php';
         .then(res => res.json())
         .then(data => {
             btn.innerText = "⚗️ ประมวลผลปฏิกิริยา"; btn.disabled = false;
+            ph = data.ph_result; document.getElementById('valPh').innerText = ph.toFixed(2);
+            let phHue = (14 - ph) * 20; document.getElementById('phStripBar').style.backgroundColor = `hsl(${phHue}, 100%, 40%)`;
+            liquidSim.setColor(data.color); targetTemp = data.final_temp;
             
-            // อัปเดต pH Strip
-            ph = data.ph_result;
-            document.getElementById('valPh').innerText = ph.toFixed(2);
-            let phHue = (14 - ph) * 20;
-            document.getElementById('phStripBar').style.backgroundColor = `hsl(${phHue}, 100%, 40%)`;
-
-            // อัปเดตสีผิวน้ำ
-            liquidSim.setColor(data.color);
-            targetTemp = data.final_temp;
-            
-            if(data.is_explosion) {
-                audio.play('explosion'); createParticles('explosion', 70); updateHP(-40, "เกิดการระเบิด!"); washBeaker(true);
-            } else {
+            if(data.is_explosion) { audio.play('explosion'); createParticles('explosion', 70); updateHP(-40, "เกิดการระเบิด!"); washBeaker(true); } else {
                 audio.play('pourLiquid'); addLog(`✅ ผลลัพธ์: ${data.product_name} | ${data.message}`);
-                liquidSim.splash(30, 80); 
-                if(data.gas !== 'ไม่มี') createParticles('gas', 40);
+                liquidSim.splash(30, 80); if(data.gas !== 'ไม่มี') createParticles('gas', 40);
                 if(data.damage > 0) { audio.play('error'); updateHP(-data.damage, data.message); }
-                
-                if(data.residue_generated && data.residue_generated.length > 0) {
-                    unwashedResidues = data.residue_generated;
-                    const resLayer = document.getElementById('residueLayer'); resLayer.style.opacity = 1; resLayer.style.height = Math.min(30, unwashedResidues[0].amt * 2) + "px";
-                }
+                if(data.residue_generated && data.residue_generated.length > 0) { unwashedResidues = data.residue_generated; const resLayer = document.getElementById('residueLayer'); resLayer.style.opacity = 1; resLayer.style.height = Math.min(30, unwashedResidues[0].amt * 2) + "px"; }
             }
         });
     }
 
     function washBeaker(force = false, clearResidue = false) {
         if(!force && !confirm("ต้องการเทสารทิ้งใช่หรือไม่?")) return;
-        audio.play('pourLiquid'); beakerItems = []; totalVol = 0;
-        document.getElementById('btnProcess').disabled = true; 
-        if (isStirring) toggleStir();
-        
-        if(clearResidue) {
-            unwashedResidues = [];
-            document.getElementById('residueLayer').style.opacity = 0; document.getElementById('residueLayer').style.height = "0";
-            addLog("ล้างอุปกรณ์สะอาดหมดจด");
-        } else addLog("เทสารทิ้งแล้ว");
+        audio.play('pourLiquid'); beakerItems = []; totalVol = 0; document.getElementById('btnProcess').disabled = true; if (isStirring) toggleStir();
+        burette.chem = null; burette.currentVol = 0; if(burette.valveOpen) toggleBuretteValve(); updateBuretteUI();
+        if(clearResidue) { unwashedResidues = []; document.getElementById('residueLayer').style.opacity = 0; document.getElementById('residueLayer').style.height = "0"; addLog("ล้างอุปกรณ์ทั้งหมดสะอาดหมดจด"); } else addLog("เทสารทิ้งแล้ว");
     }
 
-    function submitQuestReport() {
-        audio.play('click'); if(!confirm("คุณมั่นใจในผลการทดลองนี้และต้องการส่งรายงานใช่หรือไม่?")) return;
-        document.getElementById('btnSubmitQuest').innerText = "⏳ กำลังส่งข้อมูล...";
-        fetch('api_submit_report.php', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({quest_id: activeQuest.id, hp_remaining: hp, spill_count: questSpillCount, logs: logHistory, csrf_token: document.getElementById('csrf').value}) })
+    // 📄 Phase 4: เปิดหน้าต่างเขียนสรุปผล
+    function openReportModal() {
+        audio.play('click');
+        document.getElementById('reportModal').style.display = 'flex';
+        setTimeout(() => document.getElementById('reportBox').classList.add('show'), 10);
+    }
+
+    function closeReportModal() {
+        audio.play('click');
+        document.getElementById('reportBox').classList.remove('show');
+        setTimeout(() => document.getElementById('reportModal').style.display = 'none', 400);
+    }
+
+    // 📄 Phase 4: ส่งข้อมูล Report + Calculation ไปตรวจ
+    function confirmSubmitReport() {
+        audio.play('click');
+        document.getElementById('btnConfirmSubmit').innerText = "⏳ กำลังส่งข้อมูลและตรวจคำตอบ...";
+        
+        const conclusion = document.getElementById('studentConclusion').value;
+        const calcAnswer = parseFloat(document.getElementById('studentCalcAnswer').value) || 0;
+
+        fetch('api_submit_report.php', { 
+            method: 'POST', 
+            headers: {'Content-Type': 'application/json'}, 
+            body: JSON.stringify({
+                quest_id: activeQuest.id, 
+                hp_remaining: hp, 
+                spill_count: questSpillCount, 
+                logs: logHistory, 
+                conclusion: conclusion,
+                calc_answer: calcAnswer,
+                csrf_token: document.getElementById('csrf').value
+            }) 
+        })
         .then(res => res.json()).then(data => {
+            closeReportModal();
             if (data.status === 'success') {
-                audio.play('victory'); document.getElementById('victoryModal').style.display = 'flex'; setTimeout(() => document.getElementById('victoryBox').classList.add('show'), 100);
-                const gradeEl = document.getElementById('finalGrade'); gradeEl.innerText = data.grade; gradeEl.className = `grade-stamp grade-${data.grade}`;
+                audio.play('victory'); 
+                document.getElementById('victoryModal').style.display = 'flex'; 
+                setTimeout(() => document.getElementById('victoryBox').classList.add('show'), 100);
+                
+                const gradeEl = document.getElementById('finalGrade'); 
+                gradeEl.innerText = data.grade; 
+                gradeEl.className = `grade-stamp grade-${data.grade}`;
                 document.getElementById('finalXP').innerText = data.earned_xp;
-                confetti({ particleCount: 150, spread: 100, origin: { y: 0.6 }, colors: ['#f59e0b', '#38bdf8', '#22c55e'] });
-            } else { audio.play('error'); alert("Error: " + data.message); document.getElementById('btnSubmitQuest').innerText = "🚀 ส่งผลการทดลอง!"; }
+                
+                // แสดงคำใบ้การประเมินอัจฉริยะ (ถ้าตอบถูกจะได้คำชม ถ้าผิดจะมีคำแนะนำ)
+                document.getElementById('victoryEvalMsg').innerText = data.message;
+                if(data.grade === 'A') {
+                    confetti({ particleCount: 200, spread: 120, origin: { y: 0.6 }, colors: ['#f59e0b', '#38bdf8', '#22c55e'] });
+                }
+            } else { 
+                audio.play('error'); 
+                alert("Error: " + data.message); 
+                document.getElementById('btnConfirmSubmit').innerText = "📤 ยืนยันการส่งรายงาน"; 
+            }
         });
     }
 
     function makeDraggable(el, handle) { let p1=0, p2=0, p3=0, p4=0; handle.onmousedown = (e) => { e.preventDefault(); p3 = e.clientX; p4 = e.clientY; document.onmouseup = () => { document.onmouseup = null; document.onmousemove = null; }; document.onmousemove = (e) => { p1 = p3 - e.clientX; p2 = p4 - e.clientY; p3 = e.clientX; p4 = e.clientY; el.style.top = (el.offsetTop - p2) + "px"; el.style.left = (el.offsetLeft - p1) + "px"; }; }; }
     makeDraggable(document.getElementById('toolBox'), document.getElementById('toolHandle'));
     makeDraggable(document.getElementById('questHUD'), document.getElementById('hudTitle'));
+    makeDraggable(document.getElementById('stopwatchWidget'), document.getElementById('swHandle'));
 
     window.onload = () => { initCanvas(); animateMain(); document.getElementById('workbenchScroll').scrollLeft = 0; window.onresize = initCanvas; };
 </script>
