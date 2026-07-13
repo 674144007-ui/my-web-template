@@ -1,0 +1,40 @@
+# ============================================================
+# .gitignore — โรงเรียนบ้านคาวิทยา Classroom Management
+# ============================================================
+
+# ── Credentials & Config (ห้าม commit เด็ดขาด!) ──────────────
+.env
+*.env
+.env.local
+.env.production
+
+# ── ไฟล์อัปโหลดของผู้ใช้ ─────────────────────────────────────
+uploads/*
+!uploads/.gitkeep
+
+# ── Log files ────────────────────────────────────────────────
+logs/
+*.log
+php_errors.log
+
+# ── OS / Editor ──────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# ── Migration scripts (ใช้ครั้งเดียว) ───────────────────────
+migrate_*.php
+setup_*.php
+generate_hash.php
+
+# ── Backup files ─────────────────────────────────────────────
+*.sql.bak
+*.bak
+*.old
+
+# ── Installer files ──────────────────────────────────────────
+*.exe
+*.msi

@@ -1,0 +1,22 @@
+{
+  "name": "Bankha Virtual Lab & LMS",
+  "short_name": "Bankha Lab",
+  "description": "ระบบบริหารจัดการห้องเรียนอัจฉริยะและห้องปฏิบัติการเคมีเสมือนจริง โรงเรียนบ้านคาวิทยา",
+  "start_url": "./index.php",
+  "display": "standalone",
+  "background_color": "#f1f5f9",
+  "theme_color": "#1e3a8a",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "logo.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "logo.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

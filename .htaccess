@@ -1,0 +1,58 @@
+# ══════════════════════════════════════════════════════════
+#  .htaccess — Smart School Plus Security Config (Phase 7)
+#  NOTE: CSP removed for CDN compatibility in localhost dev
+# ══════════════════════════════════════════════════════════
+
+Options -Indexes
+ServerSignature Off
+
+# ── Security Headers (ปลอดภัย ไม่ break CDN) ─────────────
+<IfModule mod_headers.c>
+    Header always set X-Content-Type-Options "nosniff"
+    Header always set X-Frame-Options "SAMEORIGIN"
+    Header always set Referrer-Policy "strict-origin-when-cross-origin"
+    Header always set Permissions-Policy "geolocation=(), camera=(), microphone=()"
+    # CSP: เปิดไว้กว้างเพื่อรองรับ CDN (Three.js, Chart.js, 3Dmol, Google Fonts)
+    Header always set Content-Security-Policy "default-src 'self' 'unsafe-inline' 'unsafe-eval' https: data: blob:; connect-src 'self' https:; font-src 'self' https: data:; img-src 'self' https: data: blob:; frame-src 'none'; object-src 'none'"
+</IfModule>
+
+# ── บล็อกไฟล์ Sensitive ───────────────────────────────────
+<FilesMatch "^(\.env|env_loader\.php|config\.php|db\.php|auth\.php|security\.php|rate_limiter\.php|logger\.php|CoreValidator\.php|line_notify\.php|debug_env\.php|generate_hash\.php)$">
+    Require all denied
+</FilesMatch>
+
+<FilesMatch "^\." >
+    Require all denied
+</FilesMatch>
+
+<FilesMatch "\.(bak|old|log|cache|swp|orig)$">
+    Require all denied
+</FilesMatch>
+
+# ── ป้องกัน logs/ และ .git/ ──────────────────────────────
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteRule ^logs/ - [F,L]
+    RewriteRule ^\.git/ - [F,L]
+</IfModule>
+
+# ── PHP Security ─────────────────────────────────────────
+<IfModule mod_php8.c>
+    php_flag expose_php Off
+    php_flag session.cookie_httponly On
+    php_value session.cookie_samesite Strict
+    php_value session.gc_maxlifetime 28800
+</IfModule>
+
+# ── Gzip + Cache ─────────────────────────────────────────
+<IfModule mod_deflate.c>
+    AddOutputFilterByType DEFLATE text/html text/css application/javascript application/json
+</IfModule>
+<IfModule mod_expires.c>
+    ExpiresActive On
+    ExpiresByType text/css               "access plus 7 days"
+    ExpiresByType application/javascript "access plus 7 days"
+    ExpiresByType image/png              "access plus 30 days"
+    ExpiresByType image/jpeg             "access plus 30 days"
+    ExpiresByType image/webp             "access plus 30 days"
+</IfModule>

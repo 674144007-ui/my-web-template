@@ -1,0 +1,9 @@
+# อนุญาตไฟล์เสียงทุกชนิด
+<IfModule mod_mime.c>
+    AddType audio/mpeg .mp3
+    AddType audio/ogg  .ogg
+    AddType audio/wav  .wav
+    AddType audio/mp4  .m4a
+</IfModule>
+
+Options -Indexes
